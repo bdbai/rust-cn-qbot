@@ -1,0 +1,172 @@
+
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="UTF-8">
+    <meta http-equiv="Content-Type" content="text/html; charset=UTF-8">
+
+    <meta name="viewport"
+          content="width=device-width, initial-scale=1.0, user-scalable=0, minimum-scale=1.0, maximum-scale=1.0">
+    <meta name="apple-mobile-web-app-capable" content="yes">
+    <meta name="apple-mobile-web-app-status-bar-style" content="black">
+
+    <title>
+【Rust日报】2024-04-11 TinyUFO - 无锁高性能缓存 - Rust语言中文社区
+</title>
+    <!--    <script src="https://cdn.bootcss.com/jquery/3.2.1/jquery.min.js"></script>-->
+    <link rel="stylesheet" type="text/css" href="/css/base.css">
+</head>
+<body>
+<div id="header">
+    <div class="header">
+    <div class="logo left">
+        <a href="/">
+		<img class="left" src="/img/rust-logo.svg"/>
+		<div class="logo-title left">Rust语言中文社区</div>
+		<div style="clear:both;"></div>
+        </a>
+        <div style="clear:both;"></div>
+    </div>
+
+    <div class="signpart right">
+        <a href="/search">Search</a> &nbsp;
+        <a href="/rss">RSS</a> &nbsp;
+        <a href="/account">帐户</a>
+	</div>
+	<div style="clear:both;"></div>
+</div>
+
+</div>
+<div id="content">
+    
+<!--<link rel="stylesheet" href="//cdn.jsdelivr.net/gh/highlightjs/cdn-release@9.12.0/build/styles/default.min.css">-->
+<link rel="stylesheet" href="/css/gruvbox-light.css">
+<script src="/js/jquery.min.js"></script>
+<script src="/js/highlight.pack.js"></script>
+
+<div class="body-content article_detail detail">
+    <div class="article_detail_head">
+	
+	    <a href="/section?id=f4703117-7e6b-4caf-aa22-a3ad3db6898f" class="return">&lt; 返回版块</a>
+	
+	<div class="title">
+	    <h2><a href="/article?id=325542e0-9d74-47a5-ba3d-a5cb485b1b99">【Rust日报】2024-04-11 TinyUFO - 无锁高性能缓存</a></h2>
+	</div>
+	<p class="vice-title">
+	    <a href="/blog_with_author?author_id=980c1fcb-9a67-40bc-b9cc-f0b94a5febc3">PsiACE</a>
+
+	    发表于 <span class="article_created_time">2024-04-13 16:16</span>
+
+	    
+	</p>
+	<p>
+	    
+	</p>
+    </div>
+
+    <div class="detail-body ">
+	<h3>TinyUFO - 无锁高性能缓存</h3>
+<p>TinyUFO 是 Cloudflare 开源的 <a href="https://github.com/cloudflare/pingora" rel="noopener noreferrer">Pingora</a> 中的一个组件，结合了最先进的 S3-FIFO 算法，利用 TinyLFU 作为准入策略，相较于 LRU 和 Moka 在 zipf = 1 的情况下，提供了更高的命中率。</p>
+<p>此外，由于 TinyUFO 使用无锁数据结构，在性能上远远超过 Lru 和 Moka ，特别是在混合读写的工作负载下。</p>
+<p><a href="https://github.com/cloudflare/pingora/tree/main/tinyufo" rel="noopener noreferrer">GitHub - TinyUFO</a>: https://github.com/cloudflare/pingora/tree/main/tinyufo</p>
+<p><a href="https://crates.io/crates/TinyUFO" rel="noopener noreferrer">crates.io - TinyUFO</a>: https://crates.io/crates/TinyUFO</p>
+<h2>示例 - 使用 Candle 进行神经网络训练</h2>
+<p>一个不到两百行的简单示例，展示了如何利用 <a href="https://github.com/huggingface/candle" rel="noopener noreferrer">candle</a> （由 Hugging Face 开发的机器学习框架）实现多层感知机，根据第一轮选举的结果来预测第二轮选举的获胜者。</p>
+<p><a href="https://github.com/evgenyigumnov/candle-simplified-example" rel="noopener noreferrer"> Simplified Rust example of training a neural network based on the Candle Framework by Hugging Face</a>: https://github.com/evgenyigumnov/candle-simplified-example</p>
+<h3>This Week In Rust 542</h3>
+<p>新一期的 Rust 周报速递发布，快来看看有哪些内容你曾经关注过 :)</p>
+<p><a href="https://this-week-in-rust.org/blog/2024/04/10/this-week-in-rust-542/" rel="noopener noreferrer">This Week In Rust 542</a>: https://this-week-in-rust.org/blog/2024/04/10/this-week-in-rust-542/</p>
+<hr>
+<p>From 日报小组 <a href="https://github.com/PsiACE" rel="noopener noreferrer">PsiACE</a></p>
+<p>社区学习交流平台订阅：</p>
+<ul>
+<li><a href="https://rustcc.cn/" rel="noopener noreferrer">Rust.cc 论坛：支持 rss</a></li>
+<li><a href="https://rustcc.cn/article?id=ed7c9379-d681-47cb-9532-0db97d883f62" rel="noopener noreferrer">微信公众号：Rust 语言中文社区</a></li>
+</ul>
+
+    </div>
+
+    
+
+    <div class="comments">
+	<div class="">
+	    <h3 class="left">评论区</h3>
+	    <a class="right new-comment" href="/p/comment/new?article_id=325542e0-9d74-47a5-ba3d-a5cb485b1b99">写评论</a>
+	    <div style="clear:both;"></div>
+	</div>
+
+	
+	    <p class="useless">还没有评论</p>
+	
+    </div>
+
+    <div class="comment_paginator_part">
+	<div class="comment_paginator right">
+	    
+	    <a href="/article?id=325542e0-9d74-47a5-ba3d-a5cb485b1b99&current_page=1"
+		     class="current_page" >
+		1
+	    </a>
+	    
+	    共 0 条评论, 1 页
+	</div>
+	<div style="clear:both;"></div>
+    </div>
+</div>
+
+<script type="application/javascript">
+    function hightlight($doms) {
+	$doms.each(function (i, block) {
+	    hljs.highlightBlock(block);
+	});
+    }
+
+    hightlight($("pre code"));
+</script>
+
+</div>
+<div id="footer">
+    <div class="footer">
+    <div class="site-desc">
+	<p class="links">
+		友情链接：
+			<a target="_blank" href="http://tinylab.org/">泰晓科技</a>
+			| <a target="_blank" href="https://ruby-china.org/">Ruby China</a>
+			| <a target="_blank" href="https://eleduck.com/">电鸭远程社区</a>
+			| <a target="_blank" href="http://ipfs.cn/">IPFS中文社区</a>
+	</p>
+	<p class="links">
+	    <a href="/acknowledgement">鸣谢：</a>
+	    <a href="/acknowledgement">迅达云</a>
+	    <a href="/acknowledgement">赛贝</a>
+	    <a href="/acknowledgement">LongHash</a>
+	</p>
+	    <p> ©2016~2020 Rust.cc 版权所有 &nbsp;&nbsp;
+	    <span class="powered">Powered by
+		<a href="https://github.com/daogangtang/forustm">Forustm</a> &amp;
+		<a href="https://github.com/daogangtang/rusoda">Rusoda</a> &amp;
+		<a href="https://github.com/sappworks/sapper">Sapper</a>
+	    </span>
+	</p>
+		<p>
+        <span><a href="https://beian.miit.gov.cn">蜀ICP备20010673号-1</a></span>
+		</p>
+
+    </div>
+</div>
+
+<script>
+var _hmt = _hmt || [];
+(function() {
+ var hm = document.createElement("script");
+ hm.src = "https://hm.baidu.com/hm.js?1fd834970f3ad2bab2cb57d4aa2b2e5a";
+ var s = document.getElementsByTagName("script")[0]; 
+ s.parentNode.insertBefore(hm, s);
+ })();
+</script>
+
+</div>
+
+</body>
+</html>
+
