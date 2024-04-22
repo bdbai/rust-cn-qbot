@@ -54,4 +54,6 @@ pub struct DailyPostCategory {
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DailyPost {
     pub content_html: String,
+    pub title: String,
+    pub date: DailyPostDate,
 }

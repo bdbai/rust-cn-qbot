@@ -208,7 +208,7 @@ pub async fn run_loop(
                 info!("ignoring ws error: {:?}", err);
                 break 'retry;
             }
-            error!("ws loop error {:?}",  err);
+            error!("ws loop error {:?}", err);
             if !err.is_recoverable() {
                 break 'outer Err(err);
             }

@@ -3,6 +3,7 @@ use std::sync::Arc;
 use tokio::sync::Notify;
 use tracing::{error, info};
 
+pub mod controller;
 pub mod crawler;
 pub mod handler;
 pub mod post;
@@ -18,13 +19,19 @@ enum CliError {
 
 async fn run_env(
     authorizer: Arc<qbot::QBotCachingAuthorizerImpl>,
+    crawler: Arc<crawler::CrawlerImpl>,
     api_base_url: String,
     app_id: &str,
     quit_signal: &Notify,
 ) -> Result<(), CliError> {
-    let api_client = qbot::QBotApiClientImpl::new(api_base_url, app_id, authorizer.clone());
+    let api_client = Arc::new(qbot::QBotApiClientImpl::new(
+        api_base_url,
+        app_id,
+        authorizer.clone(),
+    ));
     let ws_gateway = api_client.get_ws_gateway().await?;
-    let handler = handler::EventHandler::new(api_client);
+    let controller = controller::ControllerImpl::new(api_client.clone(), crawler);
+    let handler = handler::EventHandler::new(api_client, controller);
 
     qbot::ws::run_loop(ws_gateway, &*authorizer, handler, quit_signal).await?;
     Ok(())
@@ -33,6 +40,7 @@ async fn run_env(
 async fn run_production(
     enabled: bool,
     authorizer: Arc<qbot::QBotCachingAuthorizerImpl>,
+    crawler: Arc<crawler::CrawlerImpl>,
     app_id: &str,
     quit_signal: &Notify,
 ) -> Result<(), CliError> {
@@ -40,6 +48,7 @@ async fn run_production(
         info!("running production");
         run_env(
             authorizer,
+            crawler,
             "https://api.sgroup.qq.com".into(),
             app_id,
             quit_signal,
@@ -54,6 +63,7 @@ async fn run_production(
 async fn run_sandbox(
     enabled: bool,
     authorizer: Arc<qbot::QBotCachingAuthorizerImpl>,
+    crawler: Arc<crawler::CrawlerImpl>,
     app_id: &str,
     quit_signal: &Notify,
 ) -> Result<(), CliError> {
@@ -61,6 +71,7 @@ async fn run_sandbox(
         info!("running sandbox");
         run_env(
             authorizer,
+            crawler,
             "https://sandbox.api.sgroup.qq.com".into(),
             app_id,
             quit_signal,
@@ -94,8 +105,15 @@ async fn main() {
     let authorizer = Arc::new(authorizer);
 
     let quit_signal = Notify::const_new();
-    let fut_production = run_production(false, authorizer.clone(), &app_id, &quit_signal);
-    let fut_sandbox = run_sandbox(true, authorizer, &app_id, &quit_signal);
+    let crawler = Arc::new(crawler::CrawlerImpl::new("https://rustcc.cn".into()));
+    let fut_production = run_production(
+        false,
+        authorizer.clone(),
+        crawler.clone(),
+        &app_id,
+        &quit_signal,
+    );
+    let fut_sandbox = run_sandbox(true, authorizer, crawler, &app_id, &quit_signal);
     let mut ws_fut = pin!(try_join(fut_production, fut_sandbox));
     let mut ctrlc_hit = false;
     let ws_res = 'ctrlc_loop: loop {

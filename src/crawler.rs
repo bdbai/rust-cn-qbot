@@ -1,8 +1,8 @@
+use std::future::Future;
 use std::str::FromStr;
 use std::sync::OnceLock;
 use std::time::Duration;
 
-use async_trait::async_trait;
 use scraper::Selector;
 use thiserror::Error;
 use tracing::error;
@@ -21,10 +21,9 @@ pub enum CrawlerError {
 
 pub type CrawlerResult<T> = std::result::Result<T, CrawlerError>;
 
-#[async_trait]
 pub trait Crawler {
-    async fn fetch_news_category(&self) -> CrawlerResult<DailyPostCategory>;
-    async fn fetch_post(&self, href: &str) -> CrawlerResult<DailyPost>;
+    fn fetch_news_category(&self) -> impl Future<Output = CrawlerResult<DailyPostCategory>> + Send;
+    fn fetch_post(&self, href: &str) -> impl Future<Output = CrawlerResult<DailyPost>> + Send;
 }
 
 pub struct CrawlerImpl {
@@ -42,7 +41,14 @@ impl CrawlerImpl {
     }
 }
 
-#[async_trait]
+fn parse_raw_title(title: &str) -> Option<(DailyPostDate, &str)> {
+    let (_prefix, mut remaining) = title.split_once('】')?;
+    remaining = remaining.trim_start();
+    let date = DailyPostDate::from_str(remaining.get(..10)?).ok()?;
+    let title = remaining[10..].trim();
+    Some((date, title))
+}
+
 impl Crawler for CrawlerImpl {
     async fn fetch_news_category(&self) -> CrawlerResult<DailyPostCategory> {
         static ARTICLE_SELECTOR: OnceLock<Selector> = OnceLock::new();
@@ -76,12 +82,10 @@ impl Crawler for CrawlerImpl {
                     .select(TITLE_SELECTOR.get_or_init(|| Selector::parse("a").unwrap()))
                     .next()?;
                 let title = a_node.text().collect::<String>();
-                let (_prefix, mut remaining) = title.split_once('】')?;
-                remaining = remaining.trim_start();
-                let date = DailyPostDate::from_str(remaining.get(..10)?).ok()?;
+                let (date, title) = parse_raw_title(&title)?;
                 let href = a_node.value().attr("href")?;
                 Some(DailyPostTitle {
-                    title: remaining[10..].trim().to_string(),
+                    title: title.into(),
                     date,
                     href: href.into(),
                 })
@@ -97,6 +101,7 @@ impl Crawler for CrawlerImpl {
 
     async fn fetch_post(&self, href: &str) -> CrawlerResult<DailyPost> {
         static CONTENT_SELECTOR: OnceLock<Selector> = OnceLock::new();
+        static TITLE_SELECTOR: OnceLock<Selector> = OnceLock::new();
 
         let res = self
             .client
@@ -126,7 +131,33 @@ impl Crawler for CrawlerImpl {
             error!("error parsing post HTML (href={}): {:?}", href, error);
             return Err(CrawlerError::HtmlParseError(error));
         }
-        Ok(DailyPost { content_html })
+
+        let title = html
+            .select(
+                TITLE_SELECTOR.get_or_init(|| Selector::parse(".body-content .title a").unwrap()),
+            )
+            .next()
+            .map(|node| node.text().collect::<String>())
+            .unwrap_or_default();
+        let (date, title) = parse_raw_title(&title).ok_or_else(|| {
+            error!("error parsing post title (href={}): {:?}", href, title);
+            CrawlerError::HtmlParseError("error parsing post title".to_string())
+        })?;
+
+        Ok(DailyPost {
+            content_html,
+            title: title.into(),
+            date,
+        })
+    }
+}
+
+impl<C: Crawler + Send + Sync> Crawler for std::sync::Arc<C> {
+    async fn fetch_news_category(&self) -> CrawlerResult<DailyPostCategory> {
+        (**self).fetch_news_category().await
+    }
+    async fn fetch_post(&self, href: &str) -> CrawlerResult<DailyPost> {
+        (**self).fetch_post(href).await
     }
 }
 
@@ -182,6 +213,8 @@ mod tests {
             .fetch_post("/article?id=325542e0-9d74-47a5-ba3d-a5cb485b1b99")
             .await
             .unwrap();
+        assert_eq!(post.title, "TinyUFO - 无锁高性能缓存");
+        assert_eq!(post.date, "2024-04-11".parse().unwrap());
         assert!(post.content_html.contains("TinyUFO"));
         assert!(post.content_html.contains("命中率"));
         assert!(post.content_html.contains("Hugging Face"));

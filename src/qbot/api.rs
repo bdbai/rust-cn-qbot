@@ -2,6 +2,7 @@ use std::future::Future;
 use std::time::Duration;
 
 use serde::{Deserialize, Serialize};
+use tracing::debug;
 
 use super::{error::QBotApiResultFromResponseExt, QBotApiResult, QBotAuthorizer};
 
@@ -11,6 +12,12 @@ pub trait QBotApiClient {
         message_id: &str,
         channel_id: &str,
         content: &str,
+    ) -> impl Future<Output = QBotApiResult<()>> + Send;
+    fn send_channel_thread_html(
+        &self,
+        channel_id: &str,
+        title: &str,
+        html: &str,
     ) -> impl Future<Output = QBotApiResult<()>> + Send;
 }
 
@@ -82,6 +89,43 @@ impl<A: QBotAuthorizer + Sync> QBotApiClient for QBotApiClientImpl<A> {
             .await?;
         Ok(())
     }
+
+    async fn send_channel_thread_html(
+        &self,
+        channel_id: &str,
+        title: &str,
+        html: &str,
+    ) -> QBotApiResult<()> {
+        #[derive(Serialize)]
+        struct SendChannelThreadHtmlRequest<'a> {
+            title: &'a str,
+            content: &'a str,
+            format: u32,
+        }
+        #[derive(Debug, Deserialize)]
+        #[allow(dead_code)]
+        struct SendChannelThreadHtmlResponse {
+            task_id: String,
+            create_time: String,
+        }
+
+        let res: SendChannelThreadHtmlResponse = self
+            .client
+            .put(&format!("{}/channels/{channel_id}/threads", self.base_url))
+            .with_access_token(&self.authorizer)
+            .await
+            .json(&SendChannelThreadHtmlRequest {
+                title,
+                content: html,
+                format: 2,
+            })
+            .send()
+            .await?
+            .to_qbot_result()
+            .await?;
+        debug!(thread_sent=?res, "thread sent");
+        Ok(())
+    }
 }
 
 impl<A: QBotApiClient + Sync> QBotApiClient for &A {
@@ -95,6 +139,16 @@ impl<A: QBotApiClient + Sync> QBotApiClient for &A {
             .reply_text_to_channel_message(message_id, channel_id, content)
             .await
     }
+    async fn send_channel_thread_html(
+        &self,
+        channel_id: &str,
+        title: &str,
+        html: &str,
+    ) -> QBotApiResult<()> {
+        (*self)
+            .send_channel_thread_html(channel_id, title, html)
+            .await
+    }
 }
 impl<A: QBotApiClient + Send + Sync> QBotApiClient for std::sync::Arc<A> {
     async fn reply_text_to_channel_message(
@@ -105,6 +159,16 @@ impl<A: QBotApiClient + Send + Sync> QBotApiClient for std::sync::Arc<A> {
     ) -> QBotApiResult<()> {
         (**self)
             .reply_text_to_channel_message(message_id, channel_id, content)
+            .await
+    }
+    async fn send_channel_thread_html(
+        &self,
+        channel_id: &str,
+        title: &str,
+        html: &str,
+    ) -> QBotApiResult<()> {
+        (**self)
+            .send_channel_thread_html(channel_id, title, html)
             .await
     }
 }
