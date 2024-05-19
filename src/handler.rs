@@ -38,7 +38,8 @@ impl<A: QBotApiClient, C: Controller> EventHandlerInner<A, C> {
             .unwrap()
             .replace_all(&message.content, "")
             .to_string();
-        let filtered = filtered.trim();
+        let mut filtered = filtered.trim();
+        filtered = filtered.trim_start_matches('/').trim();
         debug!(filtered = %filtered, "got filtered message");
         let reply_msg = if let Some(href) = filtered.strip_prefix("爬取") {
             self.controller.爬取(href.trim()).await
@@ -49,6 +50,10 @@ impl<A: QBotApiClient, C: Controller> EventHandlerInner<A, C> {
             } else {
                 "无效的日期格式".into()
             }
+        } else if filtered == "所有频道" {
+            self.controller.所有频道(&message.guild_id).await
+        } else if let Some(channel_id) = filtered.strip_prefix("设置频道") {
+            self.controller.设置频道(channel_id.trim()).await
         } else if filtered == "帮助" {
             "爬取 <链接> - 爬取指定链接的文章\n发送 <日期> - 发送指定日期的文章".into()
         } else {

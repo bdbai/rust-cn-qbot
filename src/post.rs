@@ -53,7 +53,10 @@ pub struct DailyPostCategory {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct DailyPost {
+    pub href: String,
     pub content_html: String,
     pub title: String,
+    pub author: String,
+    pub publish_time: String,
     pub date: DailyPostDate,
 }

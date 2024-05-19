@@ -102,6 +102,8 @@ impl Crawler for CrawlerImpl {
     async fn fetch_post(&self, href: &str) -> CrawlerResult<DailyPost> {
         static CONTENT_SELECTOR: OnceLock<Selector> = OnceLock::new();
         static TITLE_SELECTOR: OnceLock<Selector> = OnceLock::new();
+        static AUTHOR_SELECTOR: OnceLock<Selector> = OnceLock::new();
+        static PUBLISH_TIME_SELECTOR: OnceLock<Selector> = OnceLock::new();
 
         let res = self
             .client
@@ -143,10 +145,26 @@ impl Crawler for CrawlerImpl {
             error!("error parsing post title (href={}): {:?}", href, title);
             CrawlerError::HtmlParseError("error parsing post title".to_string())
         })?;
+        let author = html
+            .select(AUTHOR_SELECTOR.get_or_init(|| Selector::parse(".vice-title a").unwrap()))
+            .next()
+            .map(|node| node.text().collect::<String>())
+            .unwrap_or_default();
+        let publish_time = html
+            .select(
+                PUBLISH_TIME_SELECTOR
+                    .get_or_init(|| Selector::parse(".vice-title .article_created_time").unwrap()),
+            )
+            .next()
+            .map(|node| node.text().collect::<String>())
+            .unwrap_or_default();
 
         Ok(DailyPost {
+            href: href.into(),
             content_html,
             title: title.into(),
+            author,
+            publish_time,
             date,
         })
     }
@@ -213,8 +231,14 @@ mod tests {
             .fetch_post("/article?id=325542e0-9d74-47a5-ba3d-a5cb485b1b99")
             .await
             .unwrap();
+        assert_eq!(
+            post.href,
+            "/article?id=325542e0-9d74-47a5-ba3d-a5cb485b1b99"
+        );
         assert_eq!(post.title, "TinyUFO - 无锁高性能缓存");
         assert_eq!(post.date, "2024-04-11".parse().unwrap());
+        assert_eq!(post.author, "PsiACE");
+        assert_eq!(post.publish_time, "2024-04-13 16:16");
         assert!(post.content_html.contains("TinyUFO"));
         assert!(post.content_html.contains("命中率"));
         assert!(post.content_html.contains("Hugging Face"));

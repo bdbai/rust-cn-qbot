@@ -43,10 +43,7 @@ pub type QBotWsResult<T> = Result<T, QBotWsError>;
 
 impl QBotWsError {
     pub fn is_ignoreable(&self) -> bool {
-        matches!(
-            self,
-            QBotWsError::InvalidJson(_) | QBotWsError::UnexpectedData(_)
-        )
+        matches!(self, QBotWsError::InvalidJson(_))
     }
     pub fn is_resumable(&self) -> bool {
         matches!(

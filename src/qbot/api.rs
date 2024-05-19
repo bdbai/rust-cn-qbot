@@ -4,9 +4,15 @@ use std::time::Duration;
 use serde::{Deserialize, Serialize};
 use tracing::debug;
 
+pub mod model;
+
 use super::{error::QBotApiResultFromResponseExt, QBotApiResult, QBotAuthorizer};
 
 pub trait QBotApiClient {
+    fn list_channels(
+        &self,
+        guild_id: &str,
+    ) -> impl Future<Output = QBotApiResult<Vec<model::Channel>>> + Send;
     fn reply_text_to_channel_message(
         &self,
         message_id: &str,
@@ -126,6 +132,24 @@ impl<A: QBotAuthorizer + Sync> QBotApiClient for QBotApiClientImpl<A> {
         debug!(thread_sent=?res, "thread sent");
         Ok(())
     }
+
+    fn list_channels(
+        &self,
+        guild_id: &str,
+    ) -> impl Future<Output = QBotApiResult<Vec<model::Channel>>> + Send {
+        async move {
+            let res = self
+                .client
+                .get(&format!("{}/guilds/{guild_id}/channels", self.base_url))
+                .with_access_token(&self.authorizer)
+                .await
+                .send()
+                .await?
+                .to_qbot_result()
+                .await?;
+            Ok(res)
+        }
+    }
 }
 
 impl<A: QBotApiClient + Sync> QBotApiClient for &A {
@@ -149,6 +173,13 @@ impl<A: QBotApiClient + Sync> QBotApiClient for &A {
             .send_channel_thread_html(channel_id, title, html)
             .await
     }
+
+    fn list_channels(
+        &self,
+        guild_id: &str,
+    ) -> impl Future<Output = QBotApiResult<Vec<model::Channel>>> + Send {
+        (*self).list_channels(guild_id)
+    }
 }
 impl<A: QBotApiClient + Send + Sync> QBotApiClient for std::sync::Arc<A> {
     async fn reply_text_to_channel_message(
@@ -170,6 +201,13 @@ impl<A: QBotApiClient + Send + Sync> QBotApiClient for std::sync::Arc<A> {
         (**self)
             .send_channel_thread_html(channel_id, title, html)
             .await
+    }
+
+    fn list_channels(
+        &self,
+        guild_id: &str,
+    ) -> impl Future<Output = QBotApiResult<Vec<model::Channel>>> + Send {
+        (**self).list_channels(guild_id)
     }
 }
 
