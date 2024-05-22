@@ -61,9 +61,14 @@ impl QBotWsError {
                 QBotWsError::ReturnCodeError(7 | 4006..=4009 | 4900..=4913)
             )
     }
+    pub fn is_invalid_session(&self) -> bool {
+        matches!(self, QBotWsError::ReturnCodeError(9))
+    }
     pub fn is_recoverable(&self) -> bool {
         match self {
-            QBotWsError::ReturnCodeError(_) => self.is_reidentifiable(),
+            QBotWsError::ReturnCodeError(_) => {
+                self.is_reidentifiable() || self.is_invalid_session()
+            }
             QBotWsError::AccessTokenError(QBotApiError::ApiError { .. }) => false,
             _ => true,
         }

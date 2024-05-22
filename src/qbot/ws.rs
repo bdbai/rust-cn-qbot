@@ -131,6 +131,8 @@ impl QBotWebSocketHandshaked {
         let ready: QBotWebSocketPayload<ReadyPayload> = serde_json::from_slice(res.as_bytes())?;
         session.session_id = ready.data.session_id;
         session.last_seq = res_metadata.seq.unwrap_or(-1);
+        // FIXME: ws get disconnected every minute. Send heartbeat every 30s as a workaround.
+        session.heartbeat_interval = 30;
         Ok(session)
     }
 }
@@ -212,7 +214,9 @@ pub async fn run_loop(
             if !err.is_recoverable() {
                 break 'outer Err(err);
             }
-            sleep(Duration::from_secs(5)).await;
+            if !err.is_invalid_session() {
+                sleep(Duration::from_secs(5)).await;
+            }
             info!("reconnecting ws");
             let (mut ws, _) = tokio_tungstenite::connect_async(ws_url.as_str()).await?;
             handshake = QBotWebSocketHandshaked::handshake(&mut ws).await?;
