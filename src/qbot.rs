@@ -6,4 +6,4 @@ pub mod ws;
 
 pub use api::{QBotApiClient, QBotApiClientImpl};
 pub use authorizer::{QBotAuthorizer, QBotCachingAuthorizerImpl};
-pub use error::{QBotApiError, QBotApiResult, QBotWsError};
+pub use error::{QBotApiError, QBotApiResult, QBotWsError, QBotWsResult};

@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use futures::{Sink, SinkExt, Stream, StreamExt};
 use serde::{de::DeserializeOwned, Serialize};
+use tokio::sync::{Mutex, MutexGuard};
 use tokio::{sync::Notify, time::sleep};
 use tokio_tungstenite::tungstenite::{Error as WsError, Message as WsMessage};
 use tracing::{debug, error, info, warn};
@@ -14,8 +15,22 @@ use super::QBotAuthorizer;
 use opcode::{OpCode, OpCodePayload};
 use payload::*;
 
-struct QBotWebSocketHandshaked {
+#[derive(Default)]
+pub struct QBotWebSocketAuthGroup {
+    mutex: Mutex<()>,
+}
+
+impl QBotWebSocketAuthGroup {
+    pub fn new() -> Self {
+        Self {
+            mutex: Mutex::new(()),
+        }
+    }
+}
+
+struct QBotWebSocketHandshaked<'g> {
     heartbeat_interval: u64,
+    _auth_guard: MutexGuard<'g, ()>,
 }
 
 struct QBotWebSocketSession<S> {
@@ -78,16 +93,21 @@ async fn send_op<T: Serialize + OpCodePayload, S: Unpin + Sink<WsMessage, Error 
     Ok(())
 }
 
-impl QBotWebSocketHandshaked {
+impl<'g> QBotWebSocketHandshaked<'g> {
     async fn handshake<S: Unpin + Stream<Item = Result<WsMessage, WsError>>>(
         ws: &mut S,
+        auth_group: &'g QBotWebSocketAuthGroup,
     ) -> QBotWsResult<Self> {
+        let auth_guard = auth_group.mutex.lock().await;
         let QBotWebSocketPayload {
             data: HelloPayload { heartbeat_interval },
             ..
         } = receive_op(ws).await?;
 
-        Ok(Self { heartbeat_interval })
+        Ok(Self {
+            heartbeat_interval,
+            _auth_guard: auth_guard,
+        })
     }
     async fn authenticate<
         A: QBotAuthorizer,
@@ -97,15 +117,20 @@ impl QBotWebSocketHandshaked {
         authorizer: A,
         mut ws: S,
     ) -> QBotWsResult<QBotWebSocketSession<S>> {
+        // Workaround for error opcode 9
+        sleep(Duration::from_millis(2000)).await;
+
         let mut token = authorizer
             .get_access_token()
             .await
             .map_err(QBotWsError::AccessTokenError)?;
         token.insert_str(0, "QQBot ");
 
+        const PUBLIC_GUILD_MESSAGES: u64 = 1 << 30;
+        const DIRECT_MESSAGE: u64 = 1 << 12;
         let payload = IdentifyPayload {
             token: &token,
-            intents: 1 << 30, // PUBLIC_GUILD_MESSAGES,
+            intents: PUBLIC_GUILD_MESSAGES | DIRECT_MESSAGE,
             shard: (0, 1),
             properties: Default::default(),
         };
@@ -133,6 +158,7 @@ impl QBotWebSocketHandshaked {
         session.last_seq = res_metadata.seq.unwrap_or(-1);
         // FIXME: ws get disconnected every minute. Send heartbeat every 30s as a workaround.
         session.heartbeat_interval = 30;
+
         Ok(session)
     }
 }
@@ -191,11 +217,14 @@ pub async fn run_loop(
     authorizer: impl QBotAuthorizer + Sync,
     mut handler: impl QBotWsMessageHandler,
     quit_signal: &Notify,
+    auth_group: &QBotWebSocketAuthGroup,
 ) -> QBotWsResult<()> {
     let ws_url: String = ws_url.into();
     let (mut ws, _) = tokio_tungstenite::connect_async(ws_url.as_str()).await?;
-    let mut handshake = QBotWebSocketHandshaked::handshake(&mut ws).await?;
-    let mut session = handshake.authenticate(&authorizer, ws).await?;
+    let mut session = QBotWebSocketHandshaked::handshake(&mut ws, auth_group)
+        .await?
+        .authenticate(&authorizer, ws)
+        .await?;
     info!(
         "initial ws connected, url={}, handshake_interval={}",
         ws_url, session.heartbeat_interval
@@ -219,7 +248,7 @@ pub async fn run_loop(
             }
             info!("reconnecting ws");
             let (mut ws, _) = tokio_tungstenite::connect_async(ws_url.as_str()).await?;
-            handshake = QBotWebSocketHandshaked::handshake(&mut ws).await?;
+            let handshake = QBotWebSocketHandshaked::handshake(&mut ws, auth_group).await?;
             if err.is_resumable() {
                 info!("resuming ws session");
                 match session.resume(ws).await {
@@ -286,6 +315,20 @@ async fn run_loop_inner<
                 let msg: QBotWebSocketPayload<AtMessageCreatePayload> =
                     serde_json::from_slice(data.as_bytes())?;
                 handler.handle_at_message(msg.data);
+            }
+            "DIRECT_MESSAGE_CREATE" => {
+                let _msg: QBotWebSocketPayload<DirectMessageCreatePayload> =
+                    serde_json::from_slice(data.as_bytes())?;
+                // handler.handle_at_message(AtMessageCreatePayload {
+                //     author: msg.data.author,
+                //     channel_id: msg.data.channel_id,
+                //     content: msg.data.content,
+                //     guild_id: msg.data.guild_id,
+                //     id: msg.data.id,
+                //     member: msg.data.member,
+                //     timestamp: msg.data.timestamp,
+                //     seq: Default::default(),
+                // })
             }
             "PUBLIC_MESSAGE_DELETE" => {
                 info!("received ws event {}", event_type);

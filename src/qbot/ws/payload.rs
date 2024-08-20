@@ -69,6 +69,12 @@ impl OpCodePayload for HeartbeatPayload {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HeartbeatAckPayload;
+impl OpCodePayload for Option<HeartbeatAckPayload> {
+    const OPCODE: OpCode = OpCode::OP_HEARTBEAT_ACK;
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct ResumePayload<'a> {
     pub token: &'a str,
     pub session_id: &'a str,
@@ -82,8 +88,8 @@ impl OpCodePayload for ResumePayload<'_> {
 pub struct AtMessageCreateAuthor {
     #[serde(rename = "avatar")]
     pub avatar_url: String,
-    #[serde(rename = "bot")]
-    pub is_bot: bool,
+    #[serde(default)]
+    pub is_bot: Option<bool>,
     pub id: String,
     pub username: String,
 }
@@ -91,6 +97,7 @@ pub struct AtMessageCreateAuthor {
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct AtMessageCreateMember {
     pub joined_at: String,
+    #[serde(default)]
     pub roles: Vec<String>,
 }
 
@@ -104,4 +111,15 @@ pub struct AtMessageCreatePayload {
     pub member: AtMessageCreateMember,
     pub timestamp: String,
     pub seq: i32,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct DirectMessageCreatePayload {
+    pub author: AtMessageCreateAuthor,
+    pub channel_id: String,
+    pub content: String,
+    pub guild_id: String,
+    pub id: String,
+    pub member: AtMessageCreateMember,
+    pub timestamp: String,
 }

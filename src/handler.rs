@@ -1,7 +1,7 @@
 use std::sync::Arc;
 
 use regex::Regex;
-use tracing::{debug, error};
+use tracing::{debug, error, info};
 
 use crate::controller::Controller;
 use crate::qbot::ws::{payload::AtMessageCreatePayload, QBotWsMessageHandler};
@@ -32,6 +32,7 @@ impl<A: QBotApiClient, C: Controller> EventHandlerInner<A, C> {
     async fn handle_at_message(&self, message: AtMessageCreatePayload) {
         const ID_WHITELIST: [&str; 1] = ["1453422017104534300"];
         if !ID_WHITELIST.contains(&message.author.id.as_str()) {
+            info!(%message.author.id, "not in whitelist, ignore");
             return;
         }
         let filtered = Regex::new(r"<@!\d+>")
@@ -52,8 +53,6 @@ impl<A: QBotApiClient, C: Controller> EventHandlerInner<A, C> {
             }
         } else if filtered == "所有频道" {
             self.controller.所有频道(&message.guild_id).await
-        } else if let Some(channel_id) = filtered.strip_prefix("设置频道") {
-            self.controller.设置频道(channel_id.trim()).await
         } else if filtered == "帮助" {
             "爬取 <链接> - 爬取指定链接的文章\n发送 <日期> - 发送指定日期的文章".into()
         } else {

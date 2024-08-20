@@ -12,16 +12,7 @@ impl<A: QBotApiClient + Sync, C: Crawler + Sync> ControllerImpl<A, C> {
         date: DailyPostDate,
     ) -> impl Future<Output = String> + Send + 'a {
         async move {
-            let post_channel_id = match {
-                let channel_id = self.channel_id.lock().unwrap();
-                channel_id.clone()
-            } {
-                Some(id) => id,
-                None => {
-                    "651407771".into()
-                    // return "请先设置频道".to_string();
-                }
-            };
+            let post_channel_id = &*self.news_channel_id;
             let post = match self.posts.lock().unwrap().get(&date).cloned() {
                 Some(post) => post,
                 None => {
