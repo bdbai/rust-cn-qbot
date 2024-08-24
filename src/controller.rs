@@ -1,6 +1,7 @@
 use std::sync::Mutex;
 use std::{collections::BTreeMap, future::Future};
 
+mod sanitizer;
 #[path = "controller/发送.rs"]
 mod 发送;
 #[path = "controller/所有频道.rs"]

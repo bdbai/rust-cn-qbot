@@ -1,6 +1,6 @@
 use std::future::Future;
 
-use super::ControllerImpl;
+use super::{sanitizer::sanitize_message, ControllerImpl};
 use crate::crawler::Crawler;
 
 impl<A: Sync, C: Crawler + Sync> ControllerImpl<A, C> {
@@ -30,9 +30,17 @@ impl<A: Sync, C: Crawler + Sync> ControllerImpl<A, C> {
                 self.posts.lock().unwrap().insert(post.date, post)
             };
             if old_post.is_some() {
-                format!("{gc_done_text}重新爬取成功: {} - {}", post.date, post.title)
+                format!(
+                    "{gc_done_text}重新爬取成功: {} - {}",
+                    post.date,
+                    sanitize_message(post.title)
+                )
             } else {
-                format!("{gc_done_text}爬取成功: {} - {}", post.date, post.title)
+                format!(
+                    "{gc_done_text}爬取成功: {} - {}",
+                    post.date,
+                    sanitize_message(post.title)
+                )
             }
         }
     }

@@ -1,6 +1,7 @@
 use std::future::Future;
 
 use super::ControllerImpl;
+use crate::controller::sanitizer::sanitize_message;
 use crate::crawler::Crawler;
 use crate::post::DailyPostDate;
 use crate::qbot::QBotApiClient;
@@ -17,7 +18,7 @@ impl<A: QBotApiClient + Sync, C: Crawler + Sync> ControllerImpl<A, C> {
                 return format!("没有找到 {} 的日报", date);
             };
 
-            let title = format!("[{}] {}", post.date, post.title.replace(".", "-"));
+            let title = format!("[{}] {}", post.date, post.title);
             let html = format!(
                 r#"<p>{} 发表于 {}</p><p><a href="https://rustcc.cn{}">原文链接</a></p>{}"#,
                 post.author,
@@ -33,9 +34,9 @@ impl<A: QBotApiClient + Sync, C: Crawler + Sync> ControllerImpl<A, C> {
             match res {
                 Ok(_) => {
                     self.posts.lock().unwrap().remove(&date);
-                    format!("发送成功: {} - {}", post.date, post.title)
+                    format!("发送成功: {} - {}", post.date, sanitize_message(post.title))
                 }
-                Err(e) => format!("发送失败: {}", e),
+                Err(e) => format!("发送失败: {}", sanitize_message(e.to_string())),
             }
         }
     }
