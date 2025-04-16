@@ -127,10 +127,10 @@ impl<'g> QBotWebSocketHandshaked<'g> {
         token.insert_str(0, "QQBot ");
 
         const PUBLIC_GUILD_MESSAGES: u64 = 1 << 30;
-        const DIRECT_MESSAGE: u64 = 1 << 12;
+        const _DIRECT_MESSAGE: u64 = 1 << 12;
         let payload = IdentifyPayload {
             token: &token,
-            intents: PUBLIC_GUILD_MESSAGES | DIRECT_MESSAGE,
+            intents: PUBLIC_GUILD_MESSAGES,
             shard: (0, 1),
             properties: Default::default(),
         };

@@ -87,7 +87,7 @@ impl<A: QBotAuthorizer + Sync> QBotApiClient for QBotApiClientImpl<A> {
             .await
             .json(&ReplyTextRequest {
                 msg_id: message_id,
-                content,
+                content: &content.to_owned().replace(".", "。"),
             })
             .send()
             .await?
