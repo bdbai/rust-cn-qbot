@@ -89,7 +89,7 @@ async fn send_op<T: Serialize + OpCodePayload, S: Unpin + Sink<WsMessage, Error 
     };
     let payload = serde_json::to_string(&payload)?;
     debug!("sending ws message: {}", payload);
-    ws.send(WsMessage::Text(payload)).await?;
+    ws.send(WsMessage::Text(payload.into())).await?;
     Ok(())
 }
 
@@ -186,7 +186,7 @@ impl<S: Unpin + Stream<Item = Result<WsMessage, WsError>>> QBotWebSocketSession<
         if let Some(seq) = payload.seq {
             self.last_seq = seq.max(self.last_seq);
         }
-        Ok((payload, msg))
+        Ok((payload, msg.to_string()))
     }
 }
 

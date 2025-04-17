@@ -16,6 +16,7 @@ impl OpCode {
     pub(super) const OP_HELLO: OpCode = OpCode(10);
     pub(super) const OP_HEARTBEAT_ACK: OpCode = OpCode(11);
     pub(super) const OP_HTTP_CALLBACK_ACK: OpCode = OpCode(12);
+    pub(super) const OP_HTTP_CALLBACK_CHALLENGE: OpCode = OpCode(13);
 
     fn try_get_name(&self) -> Option<&'static str> {
         Some(match *self {

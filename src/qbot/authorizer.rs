@@ -2,7 +2,7 @@ use std::future::Future;
 use std::sync::Arc;
 
 #[cfg(test)]
-use mock_instant::Instant;
+use mock_instant::global::Instant;
 #[cfg(not(test))]
 use std::time::Instant;
 
@@ -127,7 +127,7 @@ impl QBotAuthorizer for MockAuthorizer {
 mod tests {
     use std::time::Duration;
 
-    use mock_instant::MockClock;
+    use mock_instant::global::MockClock;
     use mockito::Server;
     use serde_json::json;
 
@@ -236,7 +236,7 @@ mod tests {
             .mock("POST", "/app/getAppAccessToken")
             .with_status(400)
             .with_header("content-type", "application/json")
-            .with_header("X-Trace-Id", "givenTraceId")
+            .with_header("x-tps-trace-id", "givenTraceId")
             .with_body(
                 json!({
                     "code": 114514,

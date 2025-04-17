@@ -1,6 +1,7 @@
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 use tokio_tungstenite::tungstenite::{error::ProtocolError, Error as WsError};
+use tracing::info;
 
 #[derive(Debug, Error)]
 pub enum QBotApiError {
@@ -82,15 +83,16 @@ pub(crate) trait QBotApiResultFromResponseExt {
 impl QBotApiResultFromResponseExt for reqwest::Response {
     async fn to_qbot_result<T: DeserializeOwned>(self) -> QBotApiResult<T> {
         let status = self.status();
+        let trace_id = self
+            .headers()
+            .get("x-tps-trace-id")
+            .and_then(|h| h.to_str().ok())
+            .unwrap_or_default()
+            .into();
+        info!(%trace_id, "Response Trace-Id");
         if status.is_success() {
             Ok(self.json().await?)
         } else {
-            let trace_id = self
-                .headers()
-                .get("X-Trace-Id")
-                .and_then(|h| h.to_str().ok())
-                .unwrap_or_default()
-                .into();
             let error_response: QBotApiErrorResponse = self.json().await?;
             Err(QBotApiError::ApiError {
                 status_code: status.as_u16(),
