@@ -1,6 +1,7 @@
 use std::time::Duration;
 
 use futures::{Sink, SinkExt, Stream, StreamExt};
+use hyper::body::Bytes;
 use serde::{de::DeserializeOwned, Serialize};
 use tokio::sync::{Mutex, MutexGuard};
 use tokio::{sync::Notify, time::sleep};
@@ -8,9 +9,9 @@ use tokio_tungstenite::tungstenite::{Error as WsError, Message as WsMessage};
 use tracing::{debug, error, info, warn};
 
 use super::opcode::{OpCode, OpCodePayload};
-use super::payload::*;
-use super::{deserialize_op, QBotWsMessageHandler};
-use crate::qbot::error::{QBotWsError, QBotWsResult};
+use super::QBotEventMessageHandler;
+use super::{deserialize_any_op, handle_dispatch_event, payload::*};
+use crate::qbot::error::{QBotEventError, QBotEventResult};
 use crate::qbot::QBotAuthorizer;
 
 #[derive(Default)]
@@ -39,16 +40,45 @@ struct QBotWebSocketSession<S> {
     last_seq: i32,
 }
 
+fn deserialize_op<T: DeserializeOwned + OpCodePayload + std::fmt::Debug>(
+    bytes: impl AsRef<[u8]>,
+) -> QBotEventResult<QBotEventPayload<T>> {
+    let res = serde_json::from_slice::<QBotEventPayload<T>>(bytes.as_ref());
+    let payload = match res {
+        Ok(payload) => {
+            debug!("received event message: {:?}", payload);
+            payload
+        }
+        Err(err) => {
+            error!(
+                "failed to parse event message {}: {:?}",
+                String::from_utf8_lossy(bytes.as_ref()),
+                err
+            );
+            return Err(err.into());
+        }
+    };
+    if payload.opcode != T::OPCODE {
+        error!(
+            "unexpected opcode, expect {} got {}",
+            T::OPCODE,
+            payload.opcode
+        );
+        return Err(QBotEventError::ReturnCodeError(payload.opcode.0 as u32));
+    }
+    Ok(payload)
+}
+
 async fn receive_op<
     T: DeserializeOwned + OpCodePayload + std::fmt::Debug,
     S: Unpin + Stream<Item = Result<WsMessage, WsError>>,
 >(
     ws: &mut S,
-) -> QBotWsResult<QBotWebSocketPayload<T>> {
+) -> QBotEventResult<QBotEventPayload<T>> {
     let msg = ws
         .next()
         .await
-        .ok_or_else(|| QBotWsError::UnexpectedData("eof".into()))??;
+        .ok_or_else(|| QBotEventError::UnexpectedData("eof".into()))??;
     let msg = msg.into_data();
     deserialize_op::<T>(&*msg)
 }
@@ -56,8 +86,8 @@ async fn receive_op<
 async fn send_op<T: Serialize + OpCodePayload, S: Unpin + Sink<WsMessage, Error = WsError>>(
     data: &T,
     ws: &mut S,
-) -> QBotWsResult<()> {
-    let payload = QBotWebSocketPayload {
+) -> QBotEventResult<()> {
+    let payload = QBotEventPayload {
         opcode: T::OPCODE,
         data,
         seq: None,
@@ -73,9 +103,9 @@ impl<'g> QBotWebSocketHandshaked<'g> {
     async fn handshake<S: Unpin + Stream<Item = Result<WsMessage, WsError>>>(
         ws: &mut S,
         auth_group: &'g QBotWebSocketAuthGroup,
-    ) -> QBotWsResult<Self> {
+    ) -> QBotEventResult<Self> {
         let auth_guard = auth_group.mutex.lock().await;
-        let QBotWebSocketPayload {
+        let QBotEventPayload {
             data: HelloPayload { heartbeat_interval },
             ..
         } = receive_op(ws).await?;
@@ -92,14 +122,14 @@ impl<'g> QBotWebSocketHandshaked<'g> {
         &self,
         authorizer: A,
         mut ws: S,
-    ) -> QBotWsResult<QBotWebSocketSession<S>> {
+    ) -> QBotEventResult<QBotWebSocketSession<S>> {
         // Workaround for error opcode 9
         sleep(Duration::from_millis(2000)).await;
 
         let mut token = authorizer
             .get_access_token()
             .await
-            .map_err(QBotWsError::AccessTokenError)?;
+            .map_err(QBotEventError::AccessTokenError)?;
         token.insert_str(0, "QQBot ");
 
         const PUBLIC_GUILD_MESSAGES: u64 = 1 << 30;
@@ -121,15 +151,17 @@ impl<'g> QBotWebSocketHandshaked<'g> {
         };
         let (res_metadata, res) = session.receive_any().await?;
         if res_metadata.opcode != OpCode::OP_DISPATCH {
-            return Err(QBotWsError::ReturnCodeError(res_metadata.opcode.0 as u32));
+            return Err(QBotEventError::ReturnCodeError(
+                res_metadata.opcode.0 as u32,
+            ));
         }
         if res_metadata.event_type.as_deref() != Some("READY") {
-            return Err(QBotWsError::UnexpectedData(format!(
+            return Err(QBotEventError::UnexpectedData(format!(
                 "expect READY, got {}",
                 res_metadata.event_type.unwrap_or_default()
             )));
         }
-        let ready: QBotWebSocketPayload<ReadyPayload> = serde_json::from_slice(res.as_bytes())?;
+        let ready: QBotEventPayload<ReadyPayload> = serde_json::from_slice(&*res)?;
         session.session_id = ready.data.session_id;
         session.last_seq = res_metadata.seq.unwrap_or(-1);
         // FIXME: ws get disconnected every minute. Send heartbeat every 30s as a workaround.
@@ -140,37 +172,26 @@ impl<'g> QBotWebSocketHandshaked<'g> {
 }
 
 impl<S: Unpin + Stream<Item = Result<WsMessage, WsError>>> QBotWebSocketSession<S> {
-    async fn receive_any(&mut self) -> QBotWsResult<(QBotWebSocketAnyPayload, String)> {
+    async fn receive_any(&mut self) -> QBotEventResult<(QBotEventAnyPayload, Bytes)> {
         let msg = self
             .ws
             .next()
             .await
-            .ok_or_else(|| QBotWsError::UnexpectedData("eof".into()))??;
-        let msg = msg
-            .into_text()
-            .map_err(|_| QBotWsError::UnexpectedData("response with non-utf8".into()))?;
-        let payload: QBotWebSocketAnyPayload = match serde_json::from_slice(msg.as_bytes()) {
-            Ok(payload) => {
-                debug!("received ws message: {}", msg);
-                payload
-            }
-            Err(err) => {
-                error!("failed to parse ws message {}: {:?}", msg, err);
-                return Err(err.into());
-            }
-        };
+            .ok_or_else(|| QBotEventError::UnexpectedData("eof".into()))??;
+        let msg = msg.into_data();
+        let payload = deserialize_any_op(&*msg)?;
         if let Some(seq) = payload.seq {
             self.last_seq = seq.max(self.last_seq);
         }
-        Ok((payload, msg.to_string()))
+        Ok((payload, msg))
     }
 }
 
 impl<S: Unpin + Sink<WsMessage, Error = WsError>> QBotWebSocketSession<S> {
-    async fn send_op<T: Serialize + OpCodePayload>(&mut self, data: &T) -> QBotWsResult<()> {
+    async fn send_op<T: Serialize + OpCodePayload>(&mut self, data: &T) -> QBotEventResult<()> {
         send_op(data, &mut self.ws).await
     }
-    async fn resume(&mut self, mut ws: S) -> Result<(), (S, QBotWsError)> {
+    async fn resume(&mut self, mut ws: S) -> Result<(), (S, QBotEventError)> {
         let payload = ResumePayload {
             token: &self.token,
             session_id: &self.session_id,
@@ -187,10 +208,10 @@ impl<S: Unpin + Sink<WsMessage, Error = WsError>> QBotWebSocketSession<S> {
 pub async fn run_loop(
     ws_url: impl Into<String>,
     authorizer: impl QBotAuthorizer + Sync,
-    mut handler: impl QBotWsMessageHandler,
+    mut handler: impl QBotEventMessageHandler,
     quit_signal: &Notify,
     auth_group: &QBotWebSocketAuthGroup,
-) -> QBotWsResult<()> {
+) -> QBotEventResult<()> {
     let ws_url: String = ws_url.into();
     let (mut ws, _) = tokio_tungstenite::connect_async(ws_url.as_str()).await?;
     let mut session = QBotWebSocketHandshaked::handshake(&mut ws, auth_group)
@@ -244,9 +265,9 @@ async fn run_loop_inner<
     S: Unpin + Stream<Item = Result<WsMessage, WsError>> + Sink<WsMessage, Error = WsError>,
 >(
     session: &mut QBotWebSocketSession<S>,
-    handler: &mut impl QBotWsMessageHandler,
+    handler: &mut impl QBotEventMessageHandler,
     quit_signal: &Notify,
-) -> QBotWsResult<()> {
+) -> QBotEventResult<()> {
     'run_loop: loop {
         let (metadata, data) = tokio::select! {
             biased;
@@ -268,46 +289,21 @@ async fn run_loop_inner<
                 session.send_op(&HeartbeatPayload).await?;
                 continue 'run_loop;
             }
-            OpCode::OP_RECONNECT => break Err(QBotWsError::ReturnCodeError(7)),
-            OpCode::OP_INVALID_SESSION => break Err(QBotWsError::ReturnCodeError(9)),
+            OpCode::OP_RECONNECT => break Err(QBotEventError::ReturnCodeError(7)),
+            OpCode::OP_INVALID_SESSION => break Err(QBotEventError::ReturnCodeError(9)),
             op @ OpCode::OP_HEARTBEAT_ACK | op @ OpCode::OP_HTTP_CALLBACK_ACK => {
                 debug!("received ack, op={}", op);
                 continue 'run_loop;
             }
             op => {
-                warn!("unknown opcode {}: {}", op, data);
+                warn!(
+                    "unknown ws opcode {}: {}",
+                    op,
+                    String::from_utf8_lossy(&*data)
+                );
                 continue 'run_loop;
             }
         };
-        match &*event_type {
-            "RESUMED" => {
-                info!("resumed ws session");
-            }
-            "AT_MESSAGE_CREATE" => {
-                let msg: QBotWebSocketPayload<AtMessageCreatePayload> =
-                    serde_json::from_slice(data.as_bytes())?;
-                handler.handle_at_message(msg.data);
-            }
-            "DIRECT_MESSAGE_CREATE" => {
-                let _msg: QBotWebSocketPayload<DirectMessageCreatePayload> =
-                    serde_json::from_slice(data.as_bytes())?;
-                // handler.handle_at_message(AtMessageCreatePayload {
-                //     author: msg.data.author,
-                //     channel_id: msg.data.channel_id,
-                //     content: msg.data.content,
-                //     guild_id: msg.data.guild_id,
-                //     id: msg.data.id,
-                //     member: msg.data.member,
-                //     timestamp: msg.data.timestamp,
-                //     seq: Default::default(),
-                // })
-            }
-            "PUBLIC_MESSAGE_DELETE" => {
-                info!("received ws event {}", event_type);
-            }
-            _ => {
-                warn!("unhandled ws event {}", event_type);
-            }
-        }
+        handle_dispatch_event(&event_type, &data, handler)?;
     }
 }

@@ -6,4 +6,4 @@ mod json_u64;
 
 pub use api::{QBotApiClient, QBotApiClientImpl};
 pub use authorizer::{QBotAuthorizer, QBotCachingAuthorizerImpl};
-pub use error::{QBotApiError, QBotApiResult, QBotWsError, QBotWsResult};
+pub use error::{QBotApiError, QBotApiResult, QBotEventError, QBotEventResult};

@@ -1,4 +1,7 @@
-use std::{future::Future, sync::Arc};
+use std::env::VarError;
+use std::future::Future;
+use std::net::SocketAddr;
+use std::sync::Arc;
 
 use tokio::sync::Notify;
 use tracing::{error, info};
@@ -8,20 +11,27 @@ pub mod crawler;
 pub mod handler;
 pub mod post;
 pub mod qbot;
-use qbot::event::ws::QBotWebSocketAuthGroup;
+use qbot::{event::ws::QBotWebSocketAuthGroup, QBotEventError};
 
 #[derive(Debug, thiserror::Error)]
 enum CliError {
     #[error("QBotApiError: {0}")]
     QBotApiError(#[from] qbot::QBotApiError),
     #[error("QBotWsError: {0}")]
-    QBotWsError(#[from] qbot::QBotWsError),
+    QBotWsError(#[from] qbot::QBotEventError),
 }
 
-struct EnvRun<A, H> {
-    ws_gateway: String,
-    authorizer: Arc<A>,
-    handler: H,
+enum EnvRun<A, H> {
+    Ws {
+        ws_gateway: String,
+        authorizer: Arc<A>,
+        handler: H,
+    },
+    Webhook {
+        listen_addr: SocketAddr,
+        client_secret: String,
+        handler: H,
+    },
 }
 
 trait RunLoop {
@@ -29,29 +39,56 @@ trait RunLoop {
         self,
         quit_signal: &Notify,
         auth_group: &QBotWebSocketAuthGroup,
-    ) -> impl Future<Output = qbot::QBotWsResult<()>> + Send;
+    ) -> impl Future<Output = qbot::QBotEventResult<()>> + Send;
 }
 
-impl<A: qbot::QBotAuthorizer + Send + Sync, H: qbot::event::QBotWsMessageHandler + Send> RunLoop
-    for EnvRun<A, H>
+impl<
+        A: qbot::QBotAuthorizer + Send + Sync,
+        H: qbot::event::QBotEventMessageHandler + Clone + Send + Sync + 'static,
+    > RunLoop for EnvRun<A, H>
 {
     async fn run_loop(
         self,
         quit_signal: &Notify,
         auth_group: &QBotWebSocketAuthGroup,
-    ) -> qbot::QBotWsResult<()> {
-        qbot::event::ws::run_loop(
-            self.ws_gateway,
-            &*self.authorizer,
-            self.handler,
-            quit_signal,
-            auth_group,
-        )
-        .await
+    ) -> qbot::QBotEventResult<()> {
+        match self {
+            EnvRun::Ws {
+                ws_gateway,
+                authorizer,
+                handler,
+            } => {
+                qbot::event::ws::run_loop(
+                    ws_gateway,
+                    &*authorizer,
+                    handler,
+                    quit_signal,
+                    auth_group,
+                )
+                .await
+            }
+            EnvRun::Webhook {
+                listen_addr,
+                client_secret,
+                handler,
+            } => {
+                let server = qbot::event::webhook::WebhookServer::serve(
+                    listen_addr,
+                    &client_secret,
+                    handler,
+                    quit_signal,
+                )
+                .await
+                .map_err(QBotEventError::WebhookServeError)?;
+                server.shutdown().await;
+                Ok(())
+            }
+        }
     }
 }
 
 async fn run_env(
+    webhook_listen_addr: Option<std::net::SocketAddr>,
     crawler: Arc<crawler::CrawlerImpl>,
     api_base_url: String,
     app_id: &str,
@@ -61,7 +98,7 @@ async fn run_env(
     let authorizer = qbot::QBotCachingAuthorizerImpl::create_and_authorize(
         "https://bots.qq.com".into(),
         app_id.into(),
-        client_secret,
+        client_secret.clone(),
     )
     .await
     .expect("failed to create authorizer"); // TODO: better error handling
@@ -71,19 +108,28 @@ async fn run_env(
         app_id,
         authorizer.clone(),
     ));
-    let ws_gateway = api_client.get_ws_gateway().await?;
     let controller = controller::ControllerImpl::new(api_client.clone(), crawler, news_channel_id);
-    let handler = handler::EventHandler::new(api_client, controller);
+    let handler = handler::EventHandler::new(api_client.clone(), controller);
 
-    Ok(EnvRun {
-        ws_gateway,
-        authorizer,
-        handler,
+    Ok(if let Some(listen_addr) = webhook_listen_addr {
+        EnvRun::Webhook {
+            listen_addr,
+            client_secret,
+            handler,
+        }
+    } else {
+        let ws_gateway = api_client.get_ws_gateway().await?;
+        EnvRun::Ws {
+            ws_gateway,
+            authorizer,
+            handler,
+        }
     })
 }
 
 async fn run_production(
     enabled: bool,
+    webhook_listen_addr: Option<std::net::SocketAddr>,
     crawler: Arc<crawler::CrawlerImpl>,
     app_id: &str,
 ) -> Result<Option<impl RunLoop>, CliError> {
@@ -92,6 +138,7 @@ async fn run_production(
         let news_channel_id = std::env::var("QBOT_PRODUCTION_NEWS_CHANNEL_ID").unwrap();
         Ok(Some(
             run_env(
+                webhook_listen_addr,
                 crawler,
                 "https://api.sgroup.qq.com".into(),
                 app_id,
@@ -115,6 +162,7 @@ async fn run_sandbox(
         let news_channel_id = std::env::var("QBOT_SANDBOX_NEWS_CHANNEL_ID").unwrap();
         Ok(Some(
             run_env(
+                None,
                 crawler,
                 "https://sandbox.api.sgroup.qq.com".into(),
                 app_id,
@@ -152,9 +200,28 @@ async fn main() {
         .unwrap_or_else(|_| "false")
         .parse()
         .expect("QBOT_SANDBOX_ENABLED must be a boolean");
-    let fut_production = run_production(production_enabled, crawler.clone(), &app_id)
-        .await
-        .expect("Starting production");
+    let production_webhook_listen_addr =
+        match std::env::var("QBOT_PRODUCTION_WEBHOOK_LISTEN_ADDR").as_deref() {
+            Ok(addr) => {
+                let addr = addr
+                    .parse()
+                    .expect("QBOT_PRODUCTION_WEBHOOK_LISTEN_ADDR must be a valid address");
+                info!("production webhook listen addr: {}", addr);
+                Some(addr)
+            }
+            Err(VarError::NotPresent) => None,
+            Err(VarError::NotUnicode(_)) => {
+                panic!("QBOT_PRODUCTION_WEBHOOK_LISTEN_ADDR must be a valid address")
+            }
+        };
+    let fut_production = run_production(
+        production_enabled,
+        production_webhook_listen_addr,
+        crawler.clone(),
+        &app_id,
+    )
+    .await
+    .expect("Starting production");
     let fut_sandbox = run_sandbox(sandbox_enabled, crawler, &app_id)
         .await
         .expect("Starting sandbox");
@@ -164,7 +231,7 @@ async fn main() {
             if let Some(fut) = fut_production {
                 fut.run_loop(&quit_signal, &auth_group).await?;
             }
-            qbot::QBotWsResult::Ok(())
+            qbot::QBotEventResult::Ok(())
         },
         async {
             if let Some(fut) = fut_sandbox {

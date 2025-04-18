@@ -4,7 +4,7 @@ use regex::Regex;
 use tracing::{debug, error, info};
 
 use crate::controller::Controller;
-use crate::qbot::event::{payload::AtMessageCreatePayload, QBotWsMessageHandler};
+use crate::qbot::event::{payload::AtMessageCreatePayload, QBotEventMessageHandler};
 use crate::qbot::QBotApiClient;
 
 struct EventHandlerInner<A, C> {
@@ -12,9 +12,16 @@ struct EventHandlerInner<A, C> {
     controller: C,
 }
 
-#[derive(Clone)]
 pub struct EventHandler<A, C> {
     inner: Arc<EventHandlerInner<A, C>>,
+}
+
+impl<A, C> Clone for EventHandler<A, C> {
+    fn clone(&self) -> Self {
+        Self {
+            inner: self.inner.clone(),
+        }
+    }
 }
 
 impl<A, C> EventHandler<A, C> {
@@ -69,9 +76,9 @@ impl<A: QBotApiClient, C: Controller> EventHandlerInner<A, C> {
 }
 
 impl<A: QBotApiClient + Send + Sync + 'static, C: Controller + Send + Sync + 'static>
-    QBotWsMessageHandler for EventHandler<A, C>
+    QBotEventMessageHandler for EventHandler<A, C>
 {
-    fn handle_at_message(&mut self, message: AtMessageCreatePayload) {
+    fn handle_at_message(&self, message: AtMessageCreatePayload) {
         debug!(
             name: "received at message",
             content=%message.content,

@@ -1,44 +1,71 @@
-use serde::de::DeserializeOwned;
-use tracing::{debug, error};
+use std::str;
+
+use tracing::{debug, error, info, warn};
 
 mod opcode;
 pub mod payload;
-mod webhook;
+pub mod webhook;
 pub mod ws;
 
-use super::error::{QBotWsError, QBotWsResult};
-use opcode::OpCodePayload;
+use super::error::QBotEventResult;
 use payload::*;
 
-fn deserialize_op<T: DeserializeOwned + OpCodePayload + std::fmt::Debug>(
-    bytes: impl AsRef<[u8]>,
-) -> QBotWsResult<QBotWebSocketPayload<T>> {
-    let res = serde_json::from_slice::<QBotWebSocketPayload<T>>(bytes.as_ref());
-    let payload = match res {
+fn deserialize_any_op(bytes: &[u8]) -> QBotEventResult<QBotEventAnyPayload> {
+    let msg = bytes.as_ref();
+    let payload: QBotEventAnyPayload = match serde_json::from_slice(msg) {
         Ok(payload) => {
-            debug!("received event message: {:?}", payload);
+            debug!("received event message: {}", String::from_utf8_lossy(msg));
             payload
         }
         Err(err) => {
             error!(
                 "failed to parse event message {}: {:?}",
-                String::from_utf8_lossy(bytes.as_ref()),
+                String::from_utf8_lossy(msg),
                 err
             );
             return Err(err.into());
         }
     };
-    if payload.opcode != T::OPCODE {
-        error!(
-            "unexpected opcode, expect {} got {}",
-            T::OPCODE,
-            payload.opcode
-        );
-        return Err(QBotWsError::ReturnCodeError(payload.opcode.0 as u32));
-    }
     Ok(payload)
 }
 
-pub trait QBotWsMessageHandler {
-    fn handle_at_message(&mut self, _payload: AtMessageCreatePayload) {}
+fn handle_dispatch_event(
+    event_type: &str,
+    data: &[u8],
+    handler: &impl QBotEventMessageHandler,
+) -> QBotEventResult<()> {
+    match event_type {
+        "RESUMED" => {
+            info!("resumed ws session");
+        }
+        "AT_MESSAGE_CREATE" => {
+            let msg: QBotEventPayload<AtMessageCreatePayload> = serde_json::from_slice(&*data)?;
+            handler.handle_at_message(msg.data);
+        }
+        "DIRECT_MESSAGE_CREATE" => {
+            let _msg: QBotEventPayload<DirectMessageCreatePayload> =
+                serde_json::from_slice(&*data)?;
+            // handler.handle_at_message(AtMessageCreatePayload {
+            //     author: msg.data.author,
+            //     channel_id: msg.data.channel_id,
+            //     content: msg.data.content,
+            //     guild_id: msg.data.guild_id,
+            //     id: msg.data.id,
+            //     member: msg.data.member,
+            //     timestamp: msg.data.timestamp,
+            //     seq: Default::default(),
+            // })
+        }
+        "PUBLIC_MESSAGE_DELETE" => {
+            info!("received event {}", event_type);
+        }
+        _ => {
+            warn!("unhandled event {}", event_type);
+        }
+    }
+    Ok(())
+}
+
+pub trait QBotEventMessageHandler {
+    fn handle_at_message(&self, _payload: AtMessageCreatePayload) {}
 }

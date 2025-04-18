@@ -1,3 +1,5 @@
+use std::io;
+
 use serde::{de::DeserializeOwned, Deserialize};
 use thiserror::Error;
 use tokio_tungstenite::tungstenite::{error::ProtocolError, Error as WsError};
@@ -27,10 +29,12 @@ struct QBotApiErrorResponse {
 }
 
 #[derive(Debug, Error)]
-pub enum QBotWsError {
+pub enum QBotEventError {
     #[error("error connecting to WebSocket: {0}")]
     WsError(#[from] WsError),
-    #[error("WebSocket server returned unexpected data: {0}")]
+    #[error("error occurred while serving webhook: {0}")]
+    WebhookServeError(io::Error),
+    #[error("Event server returned unexpected data: {0}")]
     UnexpectedData(String),
     #[error("error parsing JSON: {0}")]
     InvalidJson(#[from] serde_json::Error),
@@ -40,17 +44,17 @@ pub enum QBotWsError {
     ReturnCodeError(u32),
 }
 
-pub type QBotWsResult<T> = Result<T, QBotWsError>;
+pub type QBotEventResult<T> = Result<T, QBotEventError>;
 
-impl QBotWsError {
+impl QBotEventError {
     pub fn is_ignoreable(&self) -> bool {
-        matches!(self, QBotWsError::InvalidJson(_))
+        matches!(self, QBotEventError::InvalidJson(_))
     }
     pub fn is_resumable(&self) -> bool {
         matches!(
             self,
-            QBotWsError::ReturnCodeError(4008 | 4009)
-                | QBotWsError::WsError(WsError::Protocol(
+            QBotEventError::ReturnCodeError(4008 | 4009)
+                | QBotEventError::WsError(WsError::Protocol(
                     ProtocolError::ResetWithoutClosingHandshake
                 ))
         )
@@ -59,18 +63,18 @@ impl QBotWsError {
         self.is_resumable()
             || matches!(
                 self,
-                QBotWsError::ReturnCodeError(7 | 4006..=4009 | 4900..=4913)
+                QBotEventError::ReturnCodeError(7 | 4006..=4009 | 4900..=4913)
             )
     }
     pub fn is_invalid_session(&self) -> bool {
-        matches!(self, QBotWsError::ReturnCodeError(9))
+        matches!(self, QBotEventError::ReturnCodeError(9))
     }
     pub fn is_recoverable(&self) -> bool {
         match self {
-            QBotWsError::ReturnCodeError(_) => {
+            QBotEventError::ReturnCodeError(_) => {
                 self.is_reidentifiable() || self.is_invalid_session()
             }
-            QBotWsError::AccessTokenError(QBotApiError::ApiError { .. }) => false,
+            QBotEventError::AccessTokenError(QBotApiError::ApiError { .. }) => false,
             _ => true,
         }
     }

@@ -5,7 +5,7 @@ use serde::{Deserialize, Serialize};
 use super::opcode::{OpCode, OpCodePayload};
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct QBotWebSocketAnyPayload {
+pub(super) struct QBotEventAnyPayload {
     #[serde(rename = "op")]
     pub opcode: OpCode,
     #[serde(rename = "s")]
@@ -15,7 +15,7 @@ pub(super) struct QBotWebSocketAnyPayload {
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
-pub(super) struct QBotWebSocketPayload<D> {
+pub(super) struct QBotEventPayload<D> {
     #[serde(rename = "op")]
     pub opcode: OpCode,
     #[serde(rename = "d")]

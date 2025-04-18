@@ -30,6 +30,12 @@ hyper-util = { version = "0.1", features = [
     "server-graceful",
 ] }
 http-body-util = "0.1"
+ed25519 = { version = "2", default-features = false }
+ed25519-dalek = { version = "2", default-features = false, features = [
+    "fast",
+    "zeroize",
+] }
+hex = "0.4"
 
 [dev-dependencies]
 mockito = "1.4"
