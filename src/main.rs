@@ -8,7 +8,7 @@ pub mod crawler;
 pub mod handler;
 pub mod post;
 pub mod qbot;
-use qbot::ws::QBotWebSocketAuthGroup;
+use qbot::event::ws::QBotWebSocketAuthGroup;
 
 #[derive(Debug, thiserror::Error)]
 enum CliError {
@@ -32,7 +32,7 @@ trait RunLoop {
     ) -> impl Future<Output = qbot::QBotWsResult<()>> + Send;
 }
 
-impl<A: qbot::QBotAuthorizer + Send + Sync, H: qbot::ws::QBotWsMessageHandler + Send> RunLoop
+impl<A: qbot::QBotAuthorizer + Send + Sync, H: qbot::event::QBotWsMessageHandler + Send> RunLoop
     for EnvRun<A, H>
 {
     async fn run_loop(
@@ -40,7 +40,7 @@ impl<A: qbot::QBotAuthorizer + Send + Sync, H: qbot::ws::QBotWsMessageHandler + 
         quit_signal: &Notify,
         auth_group: &QBotWebSocketAuthGroup,
     ) -> qbot::QBotWsResult<()> {
-        qbot::ws::run_loop(
+        qbot::event::ws::run_loop(
             self.ws_gateway,
             &*self.authorizer,
             self.handler,

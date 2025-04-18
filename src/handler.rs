@@ -4,7 +4,7 @@ use regex::Regex;
 use tracing::{debug, error, info};
 
 use crate::controller::Controller;
-use crate::qbot::ws::{payload::AtMessageCreatePayload, QBotWsMessageHandler};
+use crate::qbot::event::{payload::AtMessageCreatePayload, QBotWsMessageHandler};
 use crate::qbot::QBotApiClient;
 
 struct EventHandlerInner<A, C> {

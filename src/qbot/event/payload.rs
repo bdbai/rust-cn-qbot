@@ -123,3 +123,15 @@ pub struct DirectMessageCreatePayload {
     pub member: AtMessageCreateMember,
     pub timestamp: String,
 }
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookChallengePayload {
+    pub plain_token: String,
+    pub event_ts: String,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct WebhookChallengeResponsePayload<'a> {
+    pub plain_token: &'a str,
+    pub signature: &'a str,
+}
