@@ -1,5 +1,4 @@
 use std::future::Future;
-use std::str::FromStr;
 use std::sync::OnceLock;
 use std::time::Duration;
 
@@ -42,10 +41,18 @@ impl CrawlerImpl {
 }
 
 fn parse_raw_title(title: &str) -> Option<(DailyPostDate, &str)> {
-    let (_prefix, mut remaining) = title.split_once('】')?;
-    remaining = remaining.trim_start();
-    let date = DailyPostDate::from_str(remaining.get(..10)?).ok()?;
-    let title = remaining[10..].trim();
+    static TITLE_REGEX: OnceLock<regex::Regex> = OnceLock::new();
+    // Use regex to extract the date, followed by the actual title.
+    // Ignore any prefix before the date.
+    let re = TITLE_REGEX.get_or_init(|| {
+        regex::Regex::new(r"^\D*(\d{4})[-/年](\d{1,2})[-/月](\d{1,2})\s+(.*)$").unwrap()
+    });
+    let caps = re.captures(title)?;
+    let year = caps.get(1)?.as_str().parse().ok()?;
+    let month = caps.get(2)?.as_str().parse().ok()?;
+    let day = caps.get(3)?.as_str().parse().ok()?;
+    let date = DailyPostDate { year, month, day };
+    let title = caps.get(4)?.as_str().trim();
     Some((date, title))
 }
 
@@ -245,5 +252,42 @@ mod tests {
         assert!(post
             .content_html
             .contains(r#"<a href="https://github.com/cloudflare/pingora/tree/main/tinyufo""#));
+    }
+
+    #[test]
+    fn test_parse_raw_title() {
+        const TITLES: &[(&str, &str, &str)] = &[
+            (
+                "【Rust 中文社区】2024-04-11 TinyUFO - 无锁高性能缓存",
+                "2024-04-11",
+                "TinyUFO - 无锁高性能缓存",
+            ),
+            (
+                "[Rust 中文社区] 2024-04-12 C2PA使用Rust来实现其目标",
+                "2024-04-12",
+                "C2PA使用Rust来实现其目标",
+            ),
+            (
+                "2024-04-13 Rust 1.80.0 发布：引入了新的语言功能和改进",
+                "2024-04-13",
+                "Rust 1.80.0 发布：引入了新的语言功能和改进",
+            ),
+            (
+                "2024-4-3 Rust 1.80.1 发布：引入了新的语言功能和改进",
+                "2024-04-03",
+                "Rust 1.80.1 发布：引入了新的语言功能和改进",
+            ),
+        ];
+
+        for (raw, date, title) in TITLES {
+            let (parsed_date, parsed_title) = match parse_raw_title(raw) {
+                Some(v) => v,
+                None => {
+                    panic!("failed to parse title: {raw}");
+                }
+            };
+            assert_eq!(&parsed_date.to_string(), date, "raw title: {raw}");
+            assert_eq!(parsed_title, *title, "raw title: {raw}");
+        }
     }
 }

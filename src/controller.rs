@@ -15,7 +15,7 @@ use crate::qbot::QBotApiClient;
 
 pub trait Controller {
     fn 所有频道(&self, guild_id: &str) -> impl Future<Output = String> + Send;
-    fn 爬取(&self, href: &str) -> impl Future<Output = String> + Send;
+    fn 爬取(&self, url: &str) -> impl Future<Output = String> + Send;
     fn 发送(&self, channel_id: &str, date: DailyPostDate) -> impl Future<Output = String> + Send;
 }
 
@@ -42,8 +42,8 @@ impl<A: QBotApiClient + Sync, C: Crawler + Sync> Controller for ControllerImpl<A
         async { self.所有频道(guild_id).await }
     }
 
-    fn 爬取(&self, href: &str) -> impl Future<Output = String> + Send {
-        async { self.爬取(href).await }
+    fn 爬取(&self, url: &str) -> impl Future<Output = String> + Send {
+        async { self.爬取(url).await }
     }
 
     fn 发送(&self, channel_id: &str, date: DailyPostDate) -> impl Future<Output = String> + Send {
