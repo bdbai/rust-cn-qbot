@@ -106,9 +106,9 @@ where
     }
 }
 
-impl<A: QBotAuthorizer + Sync> QBotAuthorizer for &A {
+impl<A: QBotAuthorizer + Sync + ?Sized> QBotAuthorizer for &A {
     async fn get_access_token(&self) -> QBotApiResult<String> {
-        (*self).get_access_token().await
+        (**self).get_access_token().await
     }
 }
 

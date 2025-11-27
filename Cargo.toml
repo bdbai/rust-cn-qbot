@@ -38,5 +38,6 @@ ed25519-dalek = { version = "2", default-features = false, features = [
 hex = "0.4"
 
 [dev-dependencies]
+mockall = "0.14"
 mockito = "1.4"
 mock_instant = "0.5"

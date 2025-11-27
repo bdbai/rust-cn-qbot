@@ -92,3 +92,76 @@ impl<A: QBotApiClient + Send + Sync + 'static, C: Controller + Send + Sync + 'st
         });
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use mockall::predicate::*;
+
+    use crate::controller::MockController;
+    use crate::qbot::event::payload::AtMessageCreateAuthor;
+    use crate::qbot::MockQBotApiClient;
+
+    use super::*;
+
+    const AUTHORIZED_ID: &str = "1453422017104534300";
+
+    #[tokio::test]
+    async fn test_handle_at_message_reject_unwhitelisted() {
+        let mut controller_mock = MockController::new();
+        controller_mock.expect_发送().never();
+        controller_mock.expect_爬取().never();
+        controller_mock.expect_所有频道().never();
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_reply_text_to_channel_message()
+            .never();
+
+        let handler = EventHandler::new(api_client_mock, controller_mock);
+        let message = AtMessageCreatePayload {
+            author: AtMessageCreateAuthor {
+                id: "unauthorized_id".into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+
+        handler.inner.handle_at_message(message).await;
+    }
+
+    #[tokio::test]
+    async fn test_handle_at_message_爬取() {
+        for cmd in &[
+            "爬取 http://example.com",
+            "爬取    http://example.com   ",
+            "/爬取  <@!23897938>   http://example.com",
+        ] {
+            let mut controller_mock = MockController::new();
+            controller_mock
+                .expect_爬取()
+                .with(eq("http://example.com"))
+                .times(1)
+                .return_once(|_| Box::pin(async { "爬取结果".into() }));
+            controller_mock.expect_发送().never();
+            controller_mock.expect_所有频道().never();
+            let mut api_client_mock = MockQBotApiClient::new();
+            api_client_mock
+                .expect_reply_text_to_channel_message()
+                .times(1)
+                .with(eq("messageId"), eq("channelId"), eq("爬取结果"))
+                .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+
+            let handler = EventHandler::new(api_client_mock, controller_mock);
+            let message = AtMessageCreatePayload {
+                content: cmd.to_string(),
+                id: "messageId".into(),
+                channel_id: "channelId".into(),
+                author: AtMessageCreateAuthor {
+                    id: AUTHORIZED_ID.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            handler.inner.handle_at_message(message).await;
+        }
+    }
+}

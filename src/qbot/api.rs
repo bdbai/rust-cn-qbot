@@ -8,6 +8,7 @@ pub mod model;
 
 use super::{error::QBotApiResultFromResponseExt, QBotApiResult, QBotAuthorizer};
 
+#[cfg_attr(test, mockall::automock)]
 pub trait QBotApiClient {
     fn list_channels(
         &self,
@@ -181,7 +182,7 @@ impl<A: QBotApiClient + Sync> QBotApiClient for &A {
         (*self).list_channels(guild_id)
     }
 }
-impl<A: QBotApiClient + Send + Sync> QBotApiClient for std::sync::Arc<A> {
+impl<A: QBotApiClient + Send + Sync + ?Sized> QBotApiClient for std::sync::Arc<A> {
     async fn reply_text_to_channel_message(
         &self,
         message_id: &str,

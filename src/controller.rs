@@ -13,6 +13,7 @@ use crate::crawler::Crawler;
 use crate::post::{DailyPost, DailyPostDate};
 use crate::qbot::QBotApiClient;
 
+#[cfg_attr(test, mockall::automock)]
 pub trait Controller {
     fn 所有频道(&self, guild_id: &str) -> impl Future<Output = String> + Send;
     fn 爬取(&self, url: &str) -> impl Future<Output = String> + Send;
@@ -48,5 +49,19 @@ impl<A: QBotApiClient + Sync, C: Crawler + Sync> Controller for ControllerImpl<A
 
     fn 发送(&self, channel_id: &str, date: DailyPostDate) -> impl Future<Output = String> + Send {
         async move { self.发送(channel_id, date).await }
+    }
+}
+
+impl<'a, C: Controller + ?Sized> Controller for &'a C {
+    fn 所有频道(&self, guild_id: &str) -> impl Future<Output = String> + Send {
+        (**self).所有频道(guild_id)
+    }
+
+    fn 爬取(&self, url: &str) -> impl Future<Output = String> + Send {
+        (**self).爬取(url)
+    }
+
+    fn 发送(&self, channel_id: &str, date: DailyPostDate) -> impl Future<Output = String> + Send {
+        (**self).发送(channel_id, date)
     }
 }

@@ -25,6 +25,15 @@ pub trait Crawler {
     fn fetch_post(&self, href: &str) -> impl Future<Output = CrawlerResult<DailyPost>> + Send;
 }
 
+impl<'a, C: Crawler + ?Sized> Crawler for &'a C {
+    fn fetch_news_category(&self) -> impl Future<Output = CrawlerResult<DailyPostCategory>> + Send {
+        (**self).fetch_news_category()
+    }
+    fn fetch_post(&self, href: &str) -> impl Future<Output = CrawlerResult<DailyPost>> + Send {
+        (**self).fetch_post(href)
+    }
+}
+
 pub struct CrawlerImpl {
     base_url: String,
     client: reqwest::Client,

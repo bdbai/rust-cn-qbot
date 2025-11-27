@@ -69,3 +69,9 @@ fn handle_dispatch_event(
 pub trait QBotEventMessageHandler {
     fn handle_at_message(&self, _payload: AtMessageCreatePayload) {}
 }
+
+impl<'a, H: QBotEventMessageHandler + ?Sized> QBotEventMessageHandler for &'a H {
+    fn handle_at_message(&self, payload: AtMessageCreatePayload) {
+        (**self).handle_at_message(payload)
+    }
+}
