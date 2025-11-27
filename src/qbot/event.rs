@@ -1,4 +1,5 @@
 use std::str;
+use std::sync::Arc;
 
 use tracing::{debug, error, info, warn};
 
@@ -66,11 +67,18 @@ fn handle_dispatch_event(
     Ok(())
 }
 
+#[cfg_attr(test, mockall::automock)]
 pub trait QBotEventMessageHandler {
     fn handle_at_message(&self, _payload: AtMessageCreatePayload) {}
 }
 
 impl<'a, H: QBotEventMessageHandler + ?Sized> QBotEventMessageHandler for &'a H {
+    fn handle_at_message(&self, payload: AtMessageCreatePayload) {
+        (**self).handle_at_message(payload)
+    }
+}
+
+impl<H: QBotEventMessageHandler> QBotEventMessageHandler for Arc<H> {
     fn handle_at_message(&self, payload: AtMessageCreatePayload) {
         (**self).handle_at_message(payload)
     }

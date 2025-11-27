@@ -262,6 +262,35 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_get_ws_gateway_error() {
+        let mut mock_server = Server::new_async().await;
+        let mock = mock_server
+            .mock("GET", "/gateway")
+            .with_status(401)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "code": 10001, "message": "unauthorized" }).to_string())
+            .create_async()
+            .await;
+        let client = QBotApiClientImpl::new(
+            mock_server.url(),
+            "appId",
+            MockAuthorizer("accessToken".into()),
+        );
+        let res = client.get_ws_gateway().await;
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(matches!(
+            err,
+            super::super::QBotApiError::ApiError {
+                status_code: 401,
+                code: 10001,
+                ..
+            }
+        ));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
     async fn test_reply_text_to_channel_message() {
         let mut mock_server = Server::new_async().await;
         let mock = mock_server
@@ -286,6 +315,188 @@ mod tests {
             .reply_text_to_channel_message("messageId", "channelId", "content")
             .await
             .unwrap();
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_reply_text_to_channel_message_replaces_dots() {
+        let mut mock_server = Server::new_async().await;
+        let mock = mock_server
+            .mock("POST", "/channels/channelId/messages")
+            .match_body(mockito::Matcher::Json(json!({
+                "msg_id": "messageId",
+                "content": "hello。world。",
+            })))
+            .with_header("content-type", "application/json")
+            .with_body(json!({}).to_string())
+            .create_async()
+            .await;
+        let client = QBotApiClientImpl::new(
+            mock_server.url(),
+            "appId",
+            MockAuthorizer("accessToken".into()),
+        );
+        client
+            .reply_text_to_channel_message("messageId", "channelId", "hello.world.")
+            .await
+            .unwrap();
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_reply_text_to_channel_message_error() {
+        let mut mock_server = Server::new_async().await;
+        let mock = mock_server
+            .mock("POST", "/channels/channelId/messages")
+            .with_status(403)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "code": 50001, "message": "no permission" }).to_string())
+            .create_async()
+            .await;
+        let client = QBotApiClientImpl::new(
+            mock_server.url(),
+            "appId",
+            MockAuthorizer("accessToken".into()),
+        );
+        let res = client
+            .reply_text_to_channel_message("messageId", "channelId", "content")
+            .await;
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(matches!(
+            err,
+            super::super::QBotApiError::ApiError {
+                status_code: 403,
+                code: 50001,
+                ..
+            }
+        ));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_send_channel_thread_html() {
+        let mut mock_server = Server::new_async().await;
+        let mock = mock_server
+            .mock("PUT", "/channels/channelId/threads")
+            .match_header("X-Union-Appid", "appId")
+            .match_header("Authorization", "QQBot accessToken")
+            .match_header("content-type", "application/json")
+            .match_body(mockito::Matcher::Json(json!({
+                "title": "Thread Title",
+                "content": "<p>HTML Content</p>",
+                "format": 2,
+            })))
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!({
+                    "task_id": "task123",
+                    "create_time": "2024-04-11 12:00:00"
+                })
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let client = QBotApiClientImpl::new(
+            mock_server.url(),
+            "appId",
+            MockAuthorizer("accessToken".into()),
+        );
+        client
+            .send_channel_thread_html("channelId", "Thread Title", "<p>HTML Content</p>")
+            .await
+            .unwrap();
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_send_channel_thread_html_error() {
+        let mut mock_server = Server::new_async().await;
+        let mock = mock_server
+            .mock("PUT", "/channels/channelId/threads")
+            .with_status(500)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "code": 99999, "message": "server error" }).to_string())
+            .create_async()
+            .await;
+        let client = QBotApiClientImpl::new(
+            mock_server.url(),
+            "appId",
+            MockAuthorizer("accessToken".into()),
+        );
+        let res = client
+            .send_channel_thread_html("channelId", "Thread Title", "<p>HTML Content</p>")
+            .await;
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(matches!(
+            err,
+            super::super::QBotApiError::ApiError {
+                status_code: 500,
+                code: 99999,
+                ..
+            }
+        ));
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_list_channels() {
+        let mut mock_server = Server::new_async().await;
+        let mock = mock_server
+            .mock("GET", "/guilds/guildId/channels")
+            .match_header("X-Union-Appid", "appId")
+            .match_header("Authorization", "QQBot accessToken")
+            .with_header("content-type", "application/json")
+            .with_body(
+                json!([
+                    { "id": "ch1", "guild_id": "guildId", "name": "Channel 1" },
+                    { "id": "ch2", "guild_id": "guildId", "name": "Channel 2" }
+                ])
+                .to_string(),
+            )
+            .create_async()
+            .await;
+        let client = QBotApiClientImpl::new(
+            mock_server.url(),
+            "appId",
+            MockAuthorizer("accessToken".into()),
+        );
+        let res = client.list_channels("guildId").await.unwrap();
+        assert_eq!(res.len(), 2);
+        assert_eq!(res[0].id, "ch1");
+        assert_eq!(res[0].name, "Channel 1");
+        assert_eq!(res[1].id, "ch2");
+        assert_eq!(res[1].name, "Channel 2");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn test_list_channels_error() {
+        let mut mock_server = Server::new_async().await;
+        let mock = mock_server
+            .mock("GET", "/guilds/guildId/channels")
+            .with_status(404)
+            .with_header("content-type", "application/json")
+            .with_body(json!({ "code": 40001, "message": "guild not found" }).to_string())
+            .create_async()
+            .await;
+        let client = QBotApiClientImpl::new(
+            mock_server.url(),
+            "appId",
+            MockAuthorizer("accessToken".into()),
+        );
+        let res = client.list_channels("guildId").await;
+        assert!(res.is_err());
+        let err = res.unwrap_err();
+        assert!(matches!(
+            err,
+            super::super::QBotApiError::ApiError {
+                status_code: 404,
+                code: 40001,
+                ..
+            }
+        ));
         mock.assert_async().await;
     }
 }
