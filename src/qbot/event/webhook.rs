@@ -13,52 +13,49 @@ mod service;
 
 use super::QBotEventMessageHandler;
 
-pub struct WebhookServer {
+pub struct WebhookServerFactory {
     graceful: GracefulShutdown,
 }
 
-impl WebhookServer {
-    pub async fn serve<H: Clone + QBotEventMessageHandler + Send + Sync + 'static>(
+pub struct WebhookServer<'q, H> {
+    listener: TcpListener,
+    service: QBotWebhookService<H>,
+    quit_signal: &'q Notify,
+    graceful: &'q GracefulShutdown,
+}
+
+impl Default for WebhookServerFactory {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
+impl WebhookServerFactory {
+    pub fn new() -> Self {
+        Self {
+            graceful: GracefulShutdown::new(),
+        }
+    }
+
+    pub async fn bind<'q, H: Clone + QBotEventMessageHandler + Send + Sync + 'static>(
+        &'q self,
         listen_addr: SocketAddr,
         bot_secret: &str,
         handler: H,
-        quit_signal: &Notify,
-    ) -> io::Result<Self> {
+        quit_signal: &'q Notify,
+    ) -> io::Result<WebhookServer<'q, H>> {
         let service = QBotWebhookService {
             handler,
             challenge_generator: Arc::new(ChallengeGenerator::new(bot_secret)),
         };
-        let graceful = GracefulShutdown::new();
         let listener = TcpListener::bind(listen_addr).await?;
 
-        'serve_loop: loop {
-            let listen_res = tokio::select! {
-                biased;
-
-                listen_res = listener.accept() => listen_res,
-                _ = quit_signal.notified() => {
-                    break 'serve_loop;
-                },
-            };
-            let (stream, _) = listen_res?;
-
-            let io = TokioIo::new(stream);
-            let service = service.clone();
-            let service = service_fn(move |req| {
-                let service = service.clone();
-                async move { service.call(req).await.map(|res| res.map(Full::new)) }
-            });
-            let conn = http1::Builder::new().serve_connection(io, service);
-            let conn = graceful.watch(conn);
-
-            tokio::task::spawn(async {
-                if let Err(err) = conn.await {
-                    error!("Error serving connection: {:?}", err);
-                }
-            });
-        }
-
-        Ok(Self { graceful })
+        Ok(WebhookServer {
+            listener,
+            service,
+            quit_signal,
+            graceful: &self.graceful,
+        })
     }
 
     pub async fn shutdown(self) {
@@ -71,8 +68,51 @@ impl WebhookServer {
     }
 }
 
+impl<'q, H> WebhookServer<'q, H> {
+    #[cfg(test)]
+    fn local_addr(&self) -> io::Result<SocketAddr> {
+        self.listener.local_addr()
+    }
+
+    pub async fn serve(self) -> io::Result<()>
+    where
+        H: Clone + QBotEventMessageHandler + Send + Sync + 'static,
+    {
+        'serve_loop: loop {
+            let listen_res = tokio::select! {
+                biased;
+
+                listen_res = self.listener.accept() => listen_res,
+                _ = self.quit_signal.notified() => {
+                    break 'serve_loop;
+                },
+            };
+            let (stream, _) = listen_res?;
+
+            let io = TokioIo::new(stream);
+            let service = self.service.clone();
+            let service = service_fn(move |req| {
+                let service = service.clone();
+                async move { service.call(req).await.map(|res| res.map(Full::new)) }
+            });
+            let conn = http1::Builder::new().serve_connection(io, service);
+            let conn = self.graceful.watch(conn);
+
+            tokio::task::spawn(async {
+                if let Err(err) = conn.await {
+                    error!("Error serving connection: {:?}", err);
+                }
+            });
+        }
+
+        Ok(())
+    }
+}
+
 #[cfg(test)]
 mod tests {
+    use std::net::Ipv4Addr;
+
     use serde_json::json;
     use tokio::sync::mpsc;
 
@@ -85,30 +125,40 @@ mod tests {
     ) -> (
         SocketAddr,
         Arc<Notify>,
-        tokio::task::JoinHandle<WebhookServer>,
+        tokio::task::JoinHandle<io::Result<()>>,
     ) {
         let quit_signal = Arc::new(Notify::new());
-        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
-        let addr = listener.local_addr().unwrap();
-        drop(listener);
 
         let quit_signal_clone = quit_signal.clone();
+        let factory = WebhookServerFactory::new();
+        let (addr_tx, addr_rx) = tokio::sync::oneshot::channel();
+
         let server_handle = tokio::spawn(async move {
-            WebhookServer::serve(addr, "test_secret", handler, &quit_signal_clone)
-                .await
-                .unwrap()
+            let server = factory
+                .bind(
+                    SocketAddr::new(Ipv4Addr::LOCALHOST.into(), 0),
+                    "test_secret",
+                    handler,
+                    &quit_signal_clone,
+                )
+                .await?;
+            let addr = server.local_addr();
+            addr_tx.send(addr).ok();
+            server.serve().await?;
+            factory.shutdown().await;
+            Ok::<(), io::Error>(())
         });
 
-        (addr, quit_signal, server_handle)
+        let addr = addr_rx.await.unwrap();
+        (addr.unwrap(), quit_signal, server_handle)
     }
 
     async fn shutdown_server(
         quit_signal: Arc<Notify>,
-        server_handle: tokio::task::JoinHandle<WebhookServer>,
+        server_handle: tokio::task::JoinHandle<io::Result<()>>,
     ) {
         quit_signal.notify_one();
-        let server = server_handle.await.unwrap();
-        server.shutdown().await;
+        server_handle.await.unwrap().unwrap();
     }
 
     #[tokio::test]

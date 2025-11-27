@@ -72,15 +72,16 @@ impl<
                 client_secret,
                 handler,
             } => {
-                let server = qbot::event::webhook::WebhookServer::serve(
-                    listen_addr,
-                    &client_secret,
-                    handler,
-                    quit_signal,
-                )
-                .await
-                .map_err(QBotEventError::WebhookServeError)?;
-                server.shutdown().await;
+                let server_factory = qbot::event::webhook::WebhookServerFactory::new();
+                let server = server_factory
+                    .bind(listen_addr, &client_secret, handler, quit_signal)
+                    .await
+                    .map_err(QBotEventError::WebhookServeError)?;
+                server
+                    .serve()
+                    .await
+                    .map_err(QBotEventError::WebhookServeError)?;
+                server_factory.shutdown().await;
                 Ok(())
             }
         }
