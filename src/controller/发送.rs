@@ -1,5 +1,4 @@
 use std::cell::RefCell;
-use std::future::Future;
 use std::rc::Rc;
 
 use html5ever::tendril::TendrilSink;
@@ -60,10 +59,10 @@ fn process_html(html: &str) -> Result<String, &'static str> {
                     }
                     _ => {}
                 }
-                process_elements(&mut *child.children.borrow_mut());
+                process_elements(&mut child.children.borrow_mut());
             }
         }
-        process_elements(&mut *children);
+        process_elements(&mut children);
     }
     let mut output = Vec::with_capacity(html.len());
     for child in dom.document.children.borrow_mut().drain(..) {
@@ -75,48 +74,42 @@ fn process_html(html: &str) -> Result<String, &'static str> {
 }
 
 impl<A: QBotApiClient + Sync, C: Crawler + Sync> ControllerImpl<A, C> {
-    pub(super) fn 发送<'a>(
-        &'a self,
-        _channel_id: &'a str,
-        date: DailyPostDate,
-    ) -> impl Future<Output = String> + Send + 'a {
-        async move {
-            let post_channel_id = &*self.news_channel_id;
-            let Some(post) = self.posts.lock().unwrap().get(&date).cloned() else {
-                return format!("没有找到 {} 的日报", date);
-            };
+    pub(super) async fn 发送<'a>(&'a self, _channel_id: &'a str, date: DailyPostDate) -> String {
+        let post_channel_id = &*self.news_channel_id;
+        let Some(post) = self.posts.lock().unwrap().get(&date).cloned() else {
+            return format!("没有找到 {} 的日报", date);
+        };
 
-            let title = format!("[{}] {}", post.date, post.title);
-            let mut content_html = &post.content_html;
-            let processed_html = process_html(content_html);
-            let mut process_error = String::new();
-            content_html = match &processed_html {
-                Ok(html) => html,
-                Err(e) => {
-                    warn!("Failed to process HTML: {}", e);
-                    process_error = format!(" （HTML 处理失败:{e}）");
-                    content_html
-                }
-            };
-            let html = format!(
-                r#"<p>{} 发表于 {}</p><p><a href="https://rustcc.cn{}">原文链接</a></p>{}"#,
-                post.author, post.publish_time, post.href, content_html
-            );
-            let res = self
-                .api_client
-                .send_channel_thread_html(&post_channel_id, &title, &html)
-                .await;
-            match res {
-                Ok(_) => {
-                    self.posts.lock().unwrap().remove(&date);
-                    format!(
-                        "发送成功: {} - {}{process_error}",
-                        post.date,
-                        sanitize_message(post.title)
-                    )
-                }
-                Err(e) => format!("发送失败: {}", sanitize_message(e.to_string())),
+        let title = format!("[{}] {}", post.date, post.title);
+        let mut content_html = &post.content_html;
+        let processed_html = process_html(content_html);
+        let mut process_error = String::new();
+        content_html = match &processed_html {
+            Ok(html) => html,
+            Err(e) => {
+                warn!("Failed to process HTML: {}", e);
+                process_error = format!(" （HTML 处理失败:{e}）");
+                content_html
             }
+        };
+        let html = format!(
+            r#"<p>{} 发表于 {}</p><p><a href="https://rustcc.cn{}">原文链接</a></p>{}"#,
+            post.author, post.publish_time, post.href, content_html
+        );
+        let res = self
+            .api_client
+            .send_channel_thread_html(post_channel_id, &title, &html)
+            .await;
+        match res {
+            Ok(_) => {
+                self.posts.lock().unwrap().remove(&date);
+                format!(
+                    "发送成功: {} - {}{process_error}",
+                    post.date,
+                    sanitize_message(post.title)
+                )
+            }
+            Err(e) => format!("发送失败: {}", sanitize_message(e.to_string())),
         }
     }
 }

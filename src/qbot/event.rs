@@ -12,7 +12,7 @@ use super::error::QBotEventResult;
 use payload::*;
 
 fn deserialize_any_op(bytes: &[u8]) -> QBotEventResult<QBotEventAnyPayload> {
-    let msg = bytes.as_ref();
+    let msg = bytes;
     let payload: QBotEventAnyPayload = match serde_json::from_slice(msg) {
         Ok(payload) => {
             debug!("received event message: {}", String::from_utf8_lossy(msg));
@@ -40,12 +40,11 @@ fn handle_dispatch_event(
             info!("resumed ws session");
         }
         "AT_MESSAGE_CREATE" => {
-            let msg: QBotEventPayload<AtMessageCreatePayload> = serde_json::from_slice(&*data)?;
+            let msg: QBotEventPayload<AtMessageCreatePayload> = serde_json::from_slice(data)?;
             handler.handle_at_message(msg.data);
         }
         "DIRECT_MESSAGE_CREATE" => {
-            let _msg: QBotEventPayload<DirectMessageCreatePayload> =
-                serde_json::from_slice(&*data)?;
+            let _msg: QBotEventPayload<DirectMessageCreatePayload> = serde_json::from_slice(data)?;
             // handler.handle_at_message(AtMessageCreatePayload {
             //     author: msg.data.author,
             //     channel_id: msg.data.channel_id,
@@ -72,7 +71,7 @@ pub trait QBotEventMessageHandler {
     fn handle_at_message(&self, _payload: AtMessageCreatePayload) {}
 }
 
-impl<'a, H: QBotEventMessageHandler + ?Sized> QBotEventMessageHandler for &'a H {
+impl<H: QBotEventMessageHandler + ?Sized> QBotEventMessageHandler for &H {
     fn handle_at_message(&self, payload: AtMessageCreatePayload) {
         (**self).handle_at_message(payload)
     }

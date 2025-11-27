@@ -18,13 +18,13 @@ impl ChallengeGenerator {
         let sign = self.signing_key.sign(plain_material.as_bytes()).to_bytes();
         let mut res = "\0".repeat(sign.len() * 2);
         // Safety: hex encoding must result in a valid utf-8 string
-        unsafe { hex::encode_to_slice(&sign, res.as_bytes_mut()).unwrap() }
+        unsafe { hex::encode_to_slice(sign, res.as_bytes_mut()).unwrap() }
         res
     }
 }
 
 fn fill_repeating_bytes(mut key_bytes: &mut [u8], secret: &[u8]) {
-    while key_bytes.len() > 0 {
+    while !key_bytes.is_empty() {
         let len = key_bytes.len().min(secret.len());
         key_bytes[..len].copy_from_slice(&secret[..len]);
         key_bytes = &mut key_bytes[len..];

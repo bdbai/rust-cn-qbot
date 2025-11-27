@@ -26,7 +26,7 @@ pub trait Crawler {
     fn fetch_post(&self, href: &str) -> impl Future<Output = CrawlerResult<DailyPost>> + Send;
 }
 
-impl<'a, C: Crawler + ?Sized> Crawler for &'a C {
+impl<C: Crawler + ?Sized> Crawler for &C {
     fn fetch_news_category(&self) -> impl Future<Output = CrawlerResult<DailyPostCategory>> + Send {
         (**self).fetch_news_category()
     }
@@ -73,7 +73,7 @@ impl Crawler for CrawlerImpl {
 
         let res = self
             .client
-            .get(&format!(
+            .get(format!(
                 "{}/section?id=f4703117-7e6b-4caf-aa22-a3ad3db6898f",
                 self.base_url
             ))
@@ -124,7 +124,7 @@ impl Crawler for CrawlerImpl {
 
         let res = self
             .client
-            .get(&format!("{}{href}", self.base_url))
+            .get(format!("{}{href}", self.base_url))
             .send()
             .await?;
         let status = res.status();

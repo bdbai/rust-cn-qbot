@@ -31,7 +31,7 @@ struct QBotApiErrorResponse {
 #[derive(Debug, Error)]
 pub enum QBotEventError {
     #[error("error connecting to WebSocket: {0}")]
-    WsError(#[from] WsError),
+    WsError(Box<WsError>),
     #[error("error occurred while serving webhook: {0}")]
     WebhookServeError(io::Error),
     #[error("Event server returned unexpected data: {0}")]
@@ -44,6 +44,12 @@ pub enum QBotEventError {
     ReturnCodeError(u32),
 }
 
+impl From<WsError> for QBotEventError {
+    fn from(err: WsError) -> Self {
+        QBotEventError::WsError(Box::new(err))
+    }
+}
+
 pub type QBotEventResult<T> = Result<T, QBotEventError>;
 
 impl QBotEventError {
@@ -51,13 +57,18 @@ impl QBotEventError {
         matches!(self, QBotEventError::InvalidJson(_))
     }
     pub fn is_resumable(&self) -> bool {
-        matches!(
-            self,
-            QBotEventError::ReturnCodeError(4008 | 4009)
-                | QBotEventError::WsError(WsError::Protocol(
-                    ProtocolError::ResetWithoutClosingHandshake
-                ))
-        )
+        match self {
+            QBotEventError::ReturnCodeError(4008 | 4009) => true,
+            QBotEventError::WsError(ws_err)
+                if matches!(
+                    **ws_err,
+                    WsError::Protocol(ProtocolError::ResetWithoutClosingHandshake,)
+                ) =>
+            {
+                true
+            }
+            _ => false,
+        }
     }
     pub fn is_reidentifiable(&self) -> bool {
         self.is_resumable()

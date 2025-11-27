@@ -39,20 +39,20 @@ impl<A, C> ControllerImpl<A, C> {
 }
 
 impl<A: QBotApiClient + Sync, C: Crawler + Sync> Controller for ControllerImpl<A, C> {
-    fn 所有频道(&self, guild_id: &str) -> impl Future<Output = String> + Send {
-        async { self.所有频道(guild_id).await }
+    async fn 所有频道(&self, guild_id: &str) -> String {
+        self.所有频道(guild_id).await
     }
 
-    fn 爬取(&self, url: &str) -> impl Future<Output = String> + Send {
-        async { self.爬取(url).await }
+    async fn 爬取(&self, url: &str) -> String {
+        self.爬取(url).await
     }
 
-    fn 发送(&self, channel_id: &str, date: DailyPostDate) -> impl Future<Output = String> + Send {
-        async move { self.发送(channel_id, date).await }
+    async fn 发送(&self, channel_id: &str, date: DailyPostDate) -> String {
+        self.发送(channel_id, date).await
     }
 }
 
-impl<'a, C: Controller + ?Sized> Controller for &'a C {
+impl<C: Controller + ?Sized> Controller for &C {
     fn 所有频道(&self, guild_id: &str) -> impl Future<Output = String> + Send {
         (**self).所有频道(guild_id)
     }

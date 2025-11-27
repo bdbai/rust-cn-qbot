@@ -25,7 +25,7 @@ impl WebhookServer {
         quit_signal: &Notify,
     ) -> io::Result<Self> {
         let service = QBotWebhookService {
-            handler: handler,
+            handler,
             challenge_generator: Arc::new(ChallengeGenerator::new(bot_secret)),
         };
         let graceful = GracefulShutdown::new();

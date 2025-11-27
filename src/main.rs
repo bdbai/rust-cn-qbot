@@ -192,12 +192,12 @@ async fn main() {
     let crawler = Arc::new(crawler::CrawlerImpl::new("https://rustcc.cn".into()));
     let production_enabled = std::env::var("QBOT_PRODUCTION_ENABLED")
         .as_deref()
-        .unwrap_or_else(|_| "false")
+        .unwrap_or("false")
         .parse()
         .expect("QBOT_PRODUCTION_ENABLED must be a boolean");
     let sandbox_enabled = std::env::var("QBOT_SANDBOX_ENABLED")
         .as_deref()
-        .unwrap_or_else(|_| "false")
+        .unwrap_or("false")
         .parse()
         .expect("QBOT_SANDBOX_ENABLED must be a boolean");
     let production_webhook_listen_addr =

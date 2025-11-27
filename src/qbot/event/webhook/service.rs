@@ -33,20 +33,20 @@ impl<H: QBotEventMessageHandler> QBotWebhookService<H> {
             OpCode::OP_DISPATCH => {
                 debug!("Received dispatch event");
                 let event_type = payload.event_type.unwrap_or_default();
-                handle_dispatch_event(&event_type, &*body, &self.handler)?;
+                handle_dispatch_event(&event_type, &body, &self.handler)?;
                 Ok(b"{}"[..].into())
             }
             OpCode::OP_HTTP_CALLBACK_CHALLENGE => {
                 info!("Received HTTP callback challenge");
                 let payload: QBotEventPayload<WebhookChallengePayload> =
                     serde_json::from_slice(body.as_ref())?;
-                let mut plain_material = payload.data.event_ts + &payload.data.plain_token;
+                let plain_material = payload.data.event_ts + &payload.data.plain_token;
                 let signature = self
                     .challenge_generator
-                    .calculate_challenge_response(&mut plain_material);
+                    .calculate_challenge_response(&plain_material);
                 let res = serde_json::to_vec(&WebhookChallengeResponsePayload {
-                    plain_token: &*payload.data.plain_token,
-                    signature: &*signature,
+                    plain_token: &payload.data.plain_token,
+                    signature: &signature,
                 })
                 .unwrap();
                 Ok(res.into())
@@ -55,9 +55,9 @@ impl<H: QBotEventMessageHandler> QBotWebhookService<H> {
                 warn!(
                     "Unknown webhook opcode {:?}, raw: {}",
                     op,
-                    String::from_utf8_lossy(&*body)
+                    String::from_utf8_lossy(&body)
                 );
-                return Err(QBotEventError::UnexpectedData("Unknown opcode".into()));
+                Err(QBotEventError::UnexpectedData("Unknown opcode".into()))
             }
         }
     }
@@ -66,14 +66,12 @@ impl<H: QBotEventMessageHandler> QBotWebhookService<H> {
         let ua = req
             .headers()
             .get(USER_AGENT)
-            .map(|v| v.to_str().ok())
-            .flatten()
+            .and_then(|v| v.to_str().ok())
             .unwrap_or("unknown");
         let app_id = req
             .headers()
             .get("X-Bot-Appid")
-            .map(|v| v.to_str().ok())
-            .flatten()
+            .and_then(|v| v.to_str().ok())
             .unwrap_or("unknown");
         debug!(%ua, %app_id, "Received request");
         let upper = req.body().size_hint().upper().unwrap_or(u64::MAX);

@@ -161,7 +161,7 @@ impl<'g> QBotWebSocketHandshaked<'g> {
                 res_metadata.event_type.unwrap_or_default()
             )));
         }
-        let ready: QBotEventPayload<ReadyPayload> = serde_json::from_slice(&*res)?;
+        let ready: QBotEventPayload<ReadyPayload> = serde_json::from_slice(&res)?;
         session.session_id = ready.data.session_id;
         session.last_seq = res_metadata.seq.unwrap_or(-1);
         // FIXME: ws get disconnected every minute. Send heartbeat every 30s as a workaround.
@@ -179,7 +179,7 @@ impl<S: Unpin + Stream<Item = Result<WsMessage, WsError>>> QBotWebSocketSession<
             .await
             .ok_or_else(|| QBotEventError::UnexpectedData("eof".into()))??;
         let msg = msg.into_data();
-        let payload = deserialize_any_op(&*msg)?;
+        let payload = deserialize_any_op(&msg)?;
         if let Some(seq) = payload.seq {
             self.last_seq = seq.max(self.last_seq);
         }
@@ -299,7 +299,7 @@ async fn run_loop_inner<
                 warn!(
                     "unknown ws opcode {}: {}",
                     op,
-                    String::from_utf8_lossy(&*data)
+                    String::from_utf8_lossy(&data)
                 );
                 continue 'run_loop;
             }

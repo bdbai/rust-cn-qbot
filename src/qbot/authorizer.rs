@@ -46,7 +46,7 @@ impl QBotAuthorizerImpl {
     async fn get_access_token(&self) -> QBotApiResult<GetAccessTokenResponse> {
         let client = reqwest::Client::new();
         let res = client
-            .post(&format!("{}/app/getAppAccessToken", self.base_url))
+            .post(format!("{}/app/getAppAccessToken", self.base_url))
             .json(&GetAccessTokenRequest {
                 app_id: &self.app_id,
                 client_secret: &self.client_secret,

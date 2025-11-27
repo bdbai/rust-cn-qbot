@@ -83,7 +83,7 @@ impl<A: QBotAuthorizer + Sync> QBotApiClient for QBotApiClientImpl<A> {
 
         let _res: ReplyTextResponse = self
             .client
-            .post(&format!("{}/channels/{channel_id}/messages", self.base_url))
+            .post(format!("{}/channels/{channel_id}/messages", self.base_url))
             .with_access_token(&self.authorizer)
             .await
             .json(&ReplyTextRequest {
@@ -118,7 +118,7 @@ impl<A: QBotAuthorizer + Sync> QBotApiClient for QBotApiClientImpl<A> {
 
         let res: SendChannelThreadHtmlResponse = self
             .client
-            .put(&format!("{}/channels/{channel_id}/threads", self.base_url))
+            .put(format!("{}/channels/{channel_id}/threads", self.base_url))
             .with_access_token(&self.authorizer)
             .await
             .json(&SendChannelThreadHtmlRequest {
@@ -134,22 +134,17 @@ impl<A: QBotAuthorizer + Sync> QBotApiClient for QBotApiClientImpl<A> {
         Ok(())
     }
 
-    fn list_channels(
-        &self,
-        guild_id: &str,
-    ) -> impl Future<Output = QBotApiResult<Vec<model::Channel>>> + Send {
-        async move {
-            let res = self
-                .client
-                .get(&format!("{}/guilds/{guild_id}/channels", self.base_url))
-                .with_access_token(&self.authorizer)
-                .await
-                .send()
-                .await?
-                .to_qbot_result()
-                .await?;
-            Ok(res)
-        }
+    async fn list_channels(&self, guild_id: &str) -> QBotApiResult<Vec<model::Channel>> {
+        let res = self
+            .client
+            .get(format!("{}/guilds/{guild_id}/channels", self.base_url))
+            .with_access_token(&self.authorizer)
+            .await
+            .send()
+            .await?
+            .to_qbot_result()
+            .await?;
+        Ok(res)
     }
 }
 
@@ -220,7 +215,7 @@ impl<A: QBotAuthorizer + Sync> QBotApiClientImpl<A> {
         }
         let res: GetGatewayResponse = self
             .client
-            .get(&format!("{}/gateway", self.base_url))
+            .get(format!("{}/gateway", self.base_url))
             .with_access_token(&self.authorizer)
             .await
             .send()
