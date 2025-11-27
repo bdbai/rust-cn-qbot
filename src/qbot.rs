@@ -9,4 +9,4 @@ pub use authorizer::{QBotAuthorizer, QBotCachingAuthorizerImpl};
 pub use error::{QBotApiError, QBotApiResult, QBotEventError, QBotEventResult};
 
 #[cfg(test)]
-pub use api::MockQBotApiClient;
+pub use api::{model::Channel, MockQBotApiClient};

@@ -164,4 +164,204 @@ mod tests {
             handler.inner.handle_at_message(message).await;
         }
     }
+
+    #[tokio::test]
+    async fn test_handle_at_message_发送_valid_date() {
+        for cmd in &[
+            "发送 2024-04-11",
+            "发送    2024-04-11   ",
+            "/发送  <@!23897938>   2024-04-11",
+        ] {
+            let mut controller_mock = MockController::new();
+            controller_mock.expect_爬取().never();
+            let date: crate::post::DailyPostDate = "2024-04-11".parse().unwrap();
+            controller_mock
+                .expect_发送()
+                .with(eq("channelId"), eq(date))
+                .times(1)
+                .return_once(|_, _| Box::pin(async { "发送结果".into() }));
+            controller_mock.expect_所有频道().never();
+            let mut api_client_mock = MockQBotApiClient::new();
+            api_client_mock
+                .expect_reply_text_to_channel_message()
+                .times(1)
+                .with(eq("messageId"), eq("channelId"), eq("发送结果"))
+                .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+
+            let handler = EventHandler::new(api_client_mock, controller_mock);
+            let message = AtMessageCreatePayload {
+                content: cmd.to_string(),
+                id: "messageId".into(),
+                channel_id: "channelId".into(),
+                author: AtMessageCreateAuthor {
+                    id: AUTHORIZED_ID.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            handler.inner.handle_at_message(message).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_at_message_发送_invalid_date() {
+        let mut controller_mock = MockController::new();
+        controller_mock.expect_爬取().never();
+        controller_mock.expect_发送().never();
+        controller_mock.expect_所有频道().never();
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_reply_text_to_channel_message()
+            .times(1)
+            .with(eq("messageId"), eq("channelId"), eq("无效的日期格式"))
+            .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+
+        let handler = EventHandler::new(api_client_mock, controller_mock);
+        let message = AtMessageCreatePayload {
+            content: "发送 invalid-date".into(),
+            id: "messageId".into(),
+            channel_id: "channelId".into(),
+            author: AtMessageCreateAuthor {
+                id: AUTHORIZED_ID.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        handler.inner.handle_at_message(message).await;
+    }
+
+    #[tokio::test]
+    async fn test_handle_at_message_所有频道() {
+        for cmd in &[
+            "所有频道",
+            "  所有频道  ",
+            "/所有频道",
+            "<@!23897938> 所有频道",
+        ] {
+            let mut controller_mock = MockController::new();
+            controller_mock.expect_爬取().never();
+            controller_mock.expect_发送().never();
+            controller_mock
+                .expect_所有频道()
+                .with(eq("guildId"))
+                .times(1)
+                .return_once(|_| Box::pin(async { "频道列表".into() }));
+            let mut api_client_mock = MockQBotApiClient::new();
+            api_client_mock
+                .expect_reply_text_to_channel_message()
+                .times(1)
+                .with(eq("messageId"), eq("channelId"), eq("频道列表"))
+                .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+
+            let handler = EventHandler::new(api_client_mock, controller_mock);
+            let message = AtMessageCreatePayload {
+                content: cmd.to_string(),
+                id: "messageId".into(),
+                channel_id: "channelId".into(),
+                guild_id: "guildId".into(),
+                author: AtMessageCreateAuthor {
+                    id: AUTHORIZED_ID.into(),
+                    ..Default::default()
+                },
+                ..Default::default()
+            };
+            handler.inner.handle_at_message(message).await;
+        }
+    }
+
+    #[tokio::test]
+    async fn test_handle_at_message_帮助() {
+        let mut controller_mock = MockController::new();
+        controller_mock.expect_爬取().never();
+        controller_mock.expect_发送().never();
+        controller_mock.expect_所有频道().never();
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_reply_text_to_channel_message()
+            .times(1)
+            .with(
+                eq("messageId"),
+                eq("channelId"),
+                eq("爬取 <链接> - 爬取指定链接的文章\n发送 <日期> - 发送指定日期的文章"),
+            )
+            .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+
+        let handler = EventHandler::new(api_client_mock, controller_mock);
+        let message = AtMessageCreatePayload {
+            content: "帮助".into(),
+            id: "messageId".into(),
+            channel_id: "channelId".into(),
+            author: AtMessageCreateAuthor {
+                id: AUTHORIZED_ID.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        handler.inner.handle_at_message(message).await;
+    }
+
+    #[tokio::test]
+    async fn test_handle_at_message_unsupported_command() {
+        let mut controller_mock = MockController::new();
+        controller_mock.expect_爬取().never();
+        controller_mock.expect_发送().never();
+        controller_mock.expect_所有频道().never();
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_reply_text_to_channel_message()
+            .times(1)
+            .with(eq("messageId"), eq("channelId"), eq("不支持的命令"))
+            .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+
+        let handler = EventHandler::new(api_client_mock, controller_mock);
+        let message = AtMessageCreatePayload {
+            content: "未知命令".into(),
+            id: "messageId".into(),
+            channel_id: "channelId".into(),
+            author: AtMessageCreateAuthor {
+                id: AUTHORIZED_ID.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        handler.inner.handle_at_message(message).await;
+    }
+
+    #[tokio::test]
+    async fn test_handle_at_message_reply_error() {
+        use crate::qbot::QBotApiError;
+
+        let mut controller_mock = MockController::new();
+        controller_mock
+            .expect_爬取()
+            .return_once(|_| Box::pin(async { "爬取结果".into() }));
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_reply_text_to_channel_message()
+            .times(1)
+            .return_once(|_, _, _| {
+                Box::pin(async {
+                    Err(QBotApiError::ApiError {
+                        status_code: 500,
+                        code: 1001,
+                        message: "server error".into(),
+                        trace_id: "trace".into(),
+                    })
+                })
+            });
+
+        let handler = EventHandler::new(api_client_mock, controller_mock);
+        let message = AtMessageCreatePayload {
+            content: "爬取 http://example.com".into(),
+            id: "messageId".into(),
+            channel_id: "channelId".into(),
+            author: AtMessageCreateAuthor {
+                id: AUTHORIZED_ID.into(),
+                ..Default::default()
+            },
+            ..Default::default()
+        };
+        // Should not panic, just log the error
+        handler.inner.handle_at_message(message).await;
+    }
 }

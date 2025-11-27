@@ -20,6 +20,7 @@ pub enum CrawlerError {
 
 pub type CrawlerResult<T> = std::result::Result<T, CrawlerError>;
 
+#[cfg_attr(test, mockall::automock)]
 pub trait Crawler {
     fn fetch_news_category(&self) -> impl Future<Output = CrawlerResult<DailyPostCategory>> + Send;
     fn fetch_post(&self, href: &str) -> impl Future<Output = CrawlerResult<DailyPost>> + Send;

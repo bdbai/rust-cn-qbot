@@ -123,7 +123,24 @@ impl<A: QBotApiClient + Sync, C: Crawler + Sync> ControllerImpl<A, C> {
 
 #[cfg(test)]
 mod tests {
+    use mockall::predicate::*;
+
+    use crate::crawler::MockCrawler;
+    use crate::post::DailyPost;
+    use crate::qbot::{MockQBotApiClient, QBotApiError};
+
     use super::*;
+
+    fn make_test_post(date: &str, title: &str) -> DailyPost {
+        DailyPost {
+            href: "/test-href".into(),
+            content_html: "<p>test content</p>".into(),
+            title: title.into(),
+            author: "TestAuthor".into(),
+            publish_time: "2024-04-11 12:00".into(),
+            date: date.parse().unwrap(),
+        }
+    }
 
     #[test]
     fn test_html_replacement() {
@@ -148,5 +165,152 @@ mod tests {
             (contains_img_replacement, contains_pre_replacement),
             (true, true)
         );
+    }
+
+    #[tokio::test]
+    async fn test_发送_post_not_found() {
+        let api_client_mock = MockQBotApiClient::new();
+        let crawler_mock = MockCrawler::new();
+
+        let controller = ControllerImpl::new(api_client_mock, crawler_mock, "news_channel".into());
+
+        let date: DailyPostDate = "2024-04-11".parse().unwrap();
+        let result = controller.发送("channel", date).await;
+        assert!(result.contains("没有找到"));
+        assert!(result.contains("2024-04-11"));
+    }
+
+    #[tokio::test]
+    async fn test_发送_api_error() {
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_send_channel_thread_html()
+            .times(1)
+            .return_once(|_, _, _| {
+                Box::pin(async {
+                    Err(QBotApiError::ApiError {
+                        status_code: 500,
+                        code: 1001,
+                        message: "server error".into(),
+                        trace_id: "trace".into(),
+                    })
+                })
+            });
+        let crawler_mock = MockCrawler::new();
+
+        let controller = ControllerImpl::new(api_client_mock, crawler_mock, "news_channel".into());
+
+        // Pre-insert a post
+        let post = make_test_post("2024-04-11", "Test Title");
+        controller.posts.lock().unwrap().insert(post.date, post);
+
+        let date: DailyPostDate = "2024-04-11".parse().unwrap();
+        let result = controller.发送("channel", date).await;
+        assert!(result.contains("发送失败"));
+
+        // Post should still be there
+        assert!(controller.posts.lock().unwrap().contains_key(&date));
+    }
+
+    #[tokio::test]
+    async fn test_发送_success() {
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_send_channel_thread_html()
+            .times(1)
+            .withf(|channel_id, title, html| {
+                channel_id == "news_channel"
+                    && title == "[2024-04-11] Test Title"
+                    && html.contains("TestAuthor")
+                    && html.contains("2024-04-11 12:00")
+                    && html.contains("https://rustcc.cn/test-href")
+                    && html.contains("test content")
+            })
+            .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+        let crawler_mock = MockCrawler::new();
+
+        let controller = ControllerImpl::new(api_client_mock, crawler_mock, "news_channel".into());
+
+        // Pre-insert a post
+        let post = make_test_post("2024-04-11", "Test Title");
+        controller.posts.lock().unwrap().insert(post.date, post);
+
+        let date: DailyPostDate = "2024-04-11".parse().unwrap();
+        let result = controller.发送("channel", date).await;
+        assert!(result.contains("发送成功"));
+        assert!(result.contains("2024-04-11"));
+        assert!(result.contains("Test Title"));
+
+        // Post should be removed after successful send
+        assert!(!controller.posts.lock().unwrap().contains_key(&date));
+    }
+
+    #[tokio::test]
+    async fn test_发送_uses_news_channel_id() {
+        // Test that it uses the configured news_channel_id, not the channel_id parameter
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_send_channel_thread_html()
+            .times(1)
+            .with(eq("configured_news_channel"), always(), always())
+            .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+        let crawler_mock = MockCrawler::new();
+
+        let controller = ControllerImpl::new(
+            api_client_mock,
+            crawler_mock,
+            "configured_news_channel".into(),
+        );
+
+        let post = make_test_post("2024-04-11", "Test");
+        controller.posts.lock().unwrap().insert(post.date, post);
+
+        let date: DailyPostDate = "2024-04-11".parse().unwrap();
+        // Note: the channel_id parameter is ignored, news_channel_id is used instead
+        controller.发送("different_channel", date).await;
+    }
+
+    #[tokio::test]
+    async fn test_发送_sanitizes_title() {
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_send_channel_thread_html()
+            .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+        let crawler_mock = MockCrawler::new();
+
+        let controller = ControllerImpl::new(api_client_mock, crawler_mock, "news_channel".into());
+
+        // Pre-insert a post with dots in title
+        let post = make_test_post("2024-04-11", "Title.With.Dots");
+        controller.posts.lock().unwrap().insert(post.date, post);
+
+        let date: DailyPostDate = "2024-04-11".parse().unwrap();
+        let result = controller.发送("channel", date).await;
+        assert!(result.contains("Title-With-Dots"));
+        assert!(!result.contains("Title.With.Dots"));
+    }
+
+    #[tokio::test]
+    async fn test_发送_html_processing() {
+        let mut api_client_mock = MockQBotApiClient::new();
+        api_client_mock
+            .expect_send_channel_thread_html()
+            .times(1)
+            .withf(|_, _, html| {
+                // img and pre should be replaced
+                !html.contains("<img") && !html.contains("<pre")
+            })
+            .return_once(|_, _, _| Box::pin(async { Ok(()) }));
+        let crawler_mock = MockCrawler::new();
+
+        let controller = ControllerImpl::new(api_client_mock, crawler_mock, "news_channel".into());
+
+        // Pre-insert a post with img and pre tags
+        let mut post = make_test_post("2024-04-11", "Test");
+        post.content_html = r#"<p>Text</p><img src="test.png"><pre>code</pre>"#.into();
+        controller.posts.lock().unwrap().insert(post.date, post);
+
+        let date: DailyPostDate = "2024-04-11".parse().unwrap();
+        controller.发送("channel", date).await;
     }
 }
